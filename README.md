@@ -1,2 +1,3 @@
-# algo-trading-mt5
-My Tradiing Project
+<<<<<<< HEAD
+=======
+>>>>>>> 50c01ed
