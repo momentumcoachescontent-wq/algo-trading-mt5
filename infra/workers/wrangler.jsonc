@@ -1,6 +1,6 @@
 {
   "name": "trading-api",
-  "main": "src/index.ts",
+  "main": "infra/worker/src/index.ts",
   "compatibility_date": "2026-01-01",
   "account_id": "381d701f73f030679e1a994cd6d64b1e",
   "routes": [
