@@ -1,0 +1,41 @@
+# configs/v1_9.yaml
+# EA v1.9 — VALIDADO en F3 (RI=1.25)
+# USDJPY H4 — Candidato principal F4 Forward Testing
+
+ea_version: "v1.9"
+symbol: USDJPY
+timeframe: H4
+
+# Parámetros de señal (ADR-008)
+ema_period: 21
+adx_period: 14
+adx_min: 25.0
+atr_period: 14
+atr_sl_mult: 1.5     # ADR: 1.5x óptimo para USDJPY H4
+atr_tp_mult: 2.0     # RR=2.0 base de v1.9
+body_threshold: 0.40 # ADR: 0.40 es el umbral óptimo, no iterar
+
+# Walk-Forward
+wfa:
+  is_months: 36
+  oos_months: 6
+  step_months: 6
+
+# Criterios de aceptación F3 (ya validados)
+acceptance:
+  pf_is_min: 1.20
+  pf_oos_min: 1.10
+  robustness_index_min: 0.90
+  max_dd_pct: 10.0
+  min_trades_is: 80
+
+# Resultados conocidos (WFA validado)
+validated_results:
+  is_pf: 0.97           # IS 2020-2023 (149 trades)
+  oos_pf: 1.21          # OOS 2024-2026 (74 trades)
+  robustness_index: 1.25
+  oos_dd: 8.67
+  oos_sharpe: 0.92
+  oos_net_pnl: 903.0
+  status: "VALIDADO_F3"
+  next_phase: "F4_FORWARD_TESTING"

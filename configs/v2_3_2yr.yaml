@@ -1,0 +1,31 @@
+# configs/v2_3_2yr.yaml
+# EA v2.3 — Config WFA ajustado para 2 años de H4 (Yahoo Finance)
+# Mismo EA, ventanas WFA más cortas por limitación de historia disponible
+# NOTA: validación preliminar — F3 formal requiere 6 años via MT5
+
+ea_version: "v2.3"
+symbol: USDJPY
+timeframe: H4
+
+# Parámetros de señal (idénticos a v2_3.yaml — NO cambiar)
+ema_period: 21
+adx_period: 14
+adx_min: 25.0
+atr_period: 14
+atr_sl_mult: 1.5
+atr_tp_mult: 2.5
+body_threshold: 0.40
+
+# Walk-Forward — ajustado para 2 años de historia
+wfa:
+  is_months: 12
+  oos_months: 3
+  step_months: 3
+
+# Criterios de aceptación ajustados (validación preliminar)
+acceptance:
+  pf_is_min: 1.10
+  pf_oos_min: 1.00
+  robustness_index_min: 0.80
+  max_dd_pct: 15.0
+  min_trades_is: 10

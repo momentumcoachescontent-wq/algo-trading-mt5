@@ -1,0 +1,42 @@
+# configs/v2_3.yaml
+# EA v2.3 — EN TEST (F3 iter.13)
+# Único cambio vs v2.2: InpAtrTP 2.0 → 2.5
+# Hipótesis: WR=33% + RR=2.5 → PF=1.23 (umbral 1.20)
+
+ea_version: "v2.3"
+symbol: USDJPY
+timeframe: H4
+
+# Parámetros de señal
+ema_period: 21
+adx_period: 14
+adx_min: 25.0
+atr_period: 14
+atr_sl_mult: 1.5
+atr_tp_mult: 2.5     # Único cambio vs v2.2 (era 2.0)
+body_threshold: 0.40 # ADR: NO iterar — 0.40 es óptimo
+
+# Walk-Forward
+wfa:
+  is_months: 36
+  oos_months: 6
+  step_months: 6
+
+# Criterios de aceptación F3
+acceptance:
+  pf_is_min: 1.20
+  pf_oos_min: 1.10
+  robustness_index_min: 0.90
+  max_dd_pct: 10.0
+  min_trades_is: 80
+
+# Hipótesis matemática
+hypothesis:
+  structural_wr: 0.33          # Techo WR confirmado en 14 activos
+  wl_ratio: 1.9                # W/L ratio consistente (1.8-2.1×)
+  rr: 2.5
+  expected_pf: 1.23            # WR × RR / (1-WR) = 0.33×2.5 / 0.67 = 1.23
+  prior_version: "v2.2"
+  prior_rr: 2.0
+  prior_pf_usdjpy: 1.17
+  status: "EN_TEST"
