@@ -1,14 +1,9 @@
 {
-  "name": "trading-api",
+  "name": "algo-trading-mt5",
   "main": "infra/worker/src/index.ts",
-  "compatibility_date": "2026-01-01",
+  "compatibility_date": "2026-04-10",
   "account_id": "381d701f73f030679e1a994cd6d64b1e",
-  "routes": [
-    {
-      "pattern": "api.momentumhub.com/trading/*",
-      "zone_name": "momentumhub.com"
-    }
-  ],
+  "workers_dev": true,
   "vars": {
     "SUPABASE_URL": "https://fxttpblmiqgoerbvfons.supabase.co"
   }
