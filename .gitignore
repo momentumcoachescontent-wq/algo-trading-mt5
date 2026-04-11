@@ -29,3 +29,11 @@ dist-ssr
 !.dev.vars.example
 .env*
 !.env.example
+data/
+python/__pycache__/
+python/data/
+tests/unit/__pycache__/
+files (1).zip
+files (1)/
+.env
+*.ex5
