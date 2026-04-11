@@ -93,7 +93,8 @@ def cli():
 @click.option("--from",      "date_from", default="2020-01-01", show_default=True)
 @click.option("--to",        "date_to",   default=None)
 @click.option("--synthetic", is_flag=True, help="Usar datos sintéticos (sin MT5)")
-def extract(symbol, timeframe, date_from, date_to, synthetic):
+@click.option("--from-csv", "csv_path", default=None, help="Path a CSV exportado de MT5")
+def extract(symbol, timeframe, date_from, date_to, synthetic, csv_path):
     """Extrae datos OHLCV de MT5 y los guarda en DuckDB."""
 
     console.print(Panel(
@@ -105,6 +106,17 @@ def extract(symbol, timeframe, date_from, date_to, synthetic):
         console.print("[yellow]Modo sintético — generando datos GBM[/yellow]")
         from python.data.extract_mt5 import generate_synthetic_ohlcv
         df = generate_synthetic_ohlcv(symbol=symbol, timeframe=timeframe)
+    elif csv_path:
+        import pandas as pd
+        console.print(f"[yellow]Modo CSV — leyendo {csv_path}[/yellow]")
+        df = pd.read_csv(csv_path)
+        # Normalizar columnas del formato MT5
+        df.columns = [c.lower() for c in df.columns]
+        df["time"] = pd.to_datetime(df["time"], format="%Y.%m.%d %H:%M:%S", utc=True)
+        df = df.rename(columns={"tick_volume": "volume"})
+        df = df[["time","open","high","low","close","volume"]].copy()
+        df["symbol"] = symbol
+        df["timeframe"] = timeframe
     else:
         from python.data.extract_mt5 import MT5Extractor
         with MT5Extractor() as extractor:
