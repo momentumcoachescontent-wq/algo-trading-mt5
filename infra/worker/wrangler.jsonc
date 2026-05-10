@@ -1,9 +1,29 @@
 {
   "name": "algo-trading-mt5",
   "main": "src/index.ts",
-  "compatibility_date": "2026-01-01",
-  "account_id": "381d701f73f030679e1a994cd6d64b1e",
+  "compatibility_date": "2026-04-11",
+  // account_id removido del repo — usar CLOUDFLARE_ACCOUNT_ID env var o wrangler login
+  "workers_dev": true,
+  "observability": {
+    // FIX: activado para monitoreo F4 en tiempo real desde Cloudflare Dashboard
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "persist": true,
+      "invocation_logs": true
+    },
+    "traces": {
+      "enabled": true,
+      "persist": true,
+      "head_sampling_rate": 1
+    }
+  },
   "vars": {
     "SUPABASE_URL": "https://fxttpblmiqgoerbvfons.supabase.co"
   }
+  // Secrets configurados via wrangler secret put (NO en este archivo):
+  //   EA_WEBHOOK_SECRET  — rotar después de exposición en log 20260411
+  //   ALGO_SUPABASE_KEY  — service role key de fxttpblmiqgoerbvfons
 }
