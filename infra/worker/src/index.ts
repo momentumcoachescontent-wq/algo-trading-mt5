@@ -1,6 +1,6 @@
 /**
  * Cloudflare Worker — algo-trading-mt5
- * v3.2.0 — BUG-DATA-01 persistence repair
+ * v3.2.1 — BUG-DATA-01 persistence repair
  *
  * Objetivo F5A:
  *  - Persistir raw_payload y Edge Context Layer en signal_evals.
@@ -68,6 +68,15 @@ function normalizeEvent(raw: unknown): EventType {
   return event as EventType;
 }
 
+function normalizeSession(raw: unknown): string | null {
+  const value = toStringOrNull(raw)?.trim().toUpperCase();
+  if (!value) return null;
+
+  if (value === "OFFHOURS") return "OFF_HOURS";
+
+  return value;
+}
+
 // Normaliza direction para Supabase: buy | sell.
 // Acepta variantes MQL5/EA: BUY, SELL, buy_closed, ENTRY_READY_BUY, etc.
 function normalizeDirection(raw?: unknown): "buy" | "sell" | null {
@@ -114,6 +123,19 @@ function toNumber(value: unknown): number | null {
 function toStringOrNull(value: unknown): string | null {
   if (value == null || value === "") return null;
   return String(value);
+}
+
+function toBoolean(value: unknown): boolean | null {
+  if (value == null || value === "") return null;
+
+  if (typeof value === "boolean") return value;
+
+  const normalized = String(value).trim().toLowerCase();
+
+  if (normalized === "true" || normalized === "1" || normalized === "yes") return true;
+  if (normalized === "false" || normalized === "0" || normalized === "no") return false;
+
+  return null;
 }
 
 function firstDefined(...values: unknown[]): unknown {
@@ -179,7 +201,7 @@ const app = new Hono<{ Bindings: Env }>();
 app.get("/trading/health", (c) =>
   c.json({
     status: "ok",
-    version: "3.2.0-bug-data-01",
+    version: "3.2.1-bug-data-01b-touch-zone",
     ts: new Date().toISOString(),
   })
 );
@@ -482,7 +504,15 @@ async function handleSignalEval(
   const row = {
     symbol: body.symbol,
     eval_time: body.eval_time ?? new Date().toISOString(),
-    bias_d1: toNumber(body.bias_d1) ?? 0,
+    d1_bias: toNumber(firstDefined(
+      body.bias_d1,
+      body.bias_d1_score,
+      body.d1_bias_score,
+      body.d1BiasScore,
+      body.d1_bias,
+      body.d1Bias,
+      body.biasD1
+    )),
     h4_signal: toNumber(body.h4_signal) ?? 0,
     compressed: body.compressed ?? false,
     comp_ratio: toNumber(body.comp_ratio),
@@ -501,25 +531,62 @@ async function handleSignalEval(
     tp_price: toNumber(firstDefined(body.tp_price, body.tp)),
     atr_h4: toNumber(firstDefined(body.atr_h4, body.atr)),
     distance_to_ema_atr: toNumber(firstDefined(body.distance_to_ema_atr, body.dist_ema_atr)),
-    trend_state: toStringOrNull(body.trend_state),
-    volatility_state: toStringOrNull(body.volatility_state),
-    session: toStringOrNull(body.session),
+    touch_zone: toBoolean(firstDefined(body.touch_zone, body.touchZone)),
+    trend_state: toStringOrNull(firstDefined(body.trend_state, body.trend)),
+    volatility_state: toStringOrNull(firstDefined(body.volatility_state, body.volatility)),
+    session: normalizeSession(firstDefined(body.session, body.session_name)),
+    spread_atr_ratio: toNumber(body.spread_atr_ratio),
+    atr_energy: toNumber(firstDefined(
+      body.atr_energy,
+      body.atr_energy_ratio,
+      body.atrEnergy,
+      body.atrEnergyRatio
+    )),
+    atr_energy_ratio: toNumber(firstDefined(
+      body.atr_energy_ratio,
+      body.atr_energy,
+      body.atrEnergyRatio,
+      body.atrEnergy
+    )),
+    atr_energy_score: toNumber(firstDefined(
+      body.atr_energy_score,
+      body.atrEnergyScore
+    )),
+    guard_version: toStringOrNull(body.guard_version),
+    execution_guard_triggered: body.execution_guard_triggered ?? false,
+    execution_guard_reason: toStringOrNull(firstDefined(
+      body.execution_guard_reason,
+      body.exec_guard_reason,
+      body.block_reason
+    )),
   };
 
   const res = await supabaseInsert(supabaseUrl, key, "signal_evals", row, requestId);
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
     console.log(
-      `[SIGNAL_EVAL_WARN] ${JSON.stringify({
+      `[SIGNAL_EVAL_ERROR] ${JSON.stringify({
         requestId,
         status: res.status,
         detail,
         row,
       })}`
     );
-  }
-}
 
+    throw new Error(`Supabase signal_evals insert failed: ${res.status} ${detail}`);
+  }
+
+  console.log(
+    `[SIGNAL_EVAL_INSERT_OK] ${JSON.stringify({
+      requestId,
+      symbol: body.symbol,
+      eval_time: body.eval_time ?? null,
+      action: body.action ?? null,
+      touch_zone: row.touch_zone,
+      ea_version: body.ea_version ?? null,
+    })}`
+  );
+}
 // ── Handler: circuit_break ───────────────────────────────────────────────
 async function handleCircuitBreak(
   body: Record<string, unknown>,
@@ -589,7 +656,7 @@ async function supabaseInsert(
   });
 
   if (!res.ok) {
-    const errText = await res.text().catch(() => "");
+    const errText = await res.clone().text().catch(() => "");
     console.log(
       `[SUPABASE_INSERT_ERROR] ${JSON.stringify({
         requestId,
