@@ -30,9 +30,10 @@ dist-ssr
 .env*
 !.env.example
 data/
-python/__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
 python/data/
-tests/unit/__pycache__/
 files (1).zip
 files (1)/
 .env
