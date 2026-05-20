@@ -34,6 +34,7 @@ class SignalConfig:
     atr_tp_mult:     float = 2.5    # v2.3: 2.5x (v2.2 era 2.0x)
     body_threshold:  float = 0.40   # body ≥ 40% del rango total
     lookback:        int   = 50     # ventana HH/HL
+    touch_mult:      float = 0.50   # touch gate en unidades ATR (binary: 0.50, soft: 0.75)
 
 
 # ── Cálculo de indicadores ────────────────────────────────────────────────
@@ -154,9 +155,9 @@ def generate_signals(df: pd.DataFrame, cfg: SignalConfig) -> pd.DataFrame:
     body_ratio_1  = out["body_ratio"].shift(1)
     hh_hl_1       = out["hh_hl"].shift(1)
 
-    # Touch & Reject: precio cerca de EMA (≤ 0.5 × ATR)
-    touch_long  = (close_1 - ema21_1).abs() / atr_1.replace(0, np.nan) <= 0.5
-    touch_short = (close_1 - ema21_1).abs() / atr_1.replace(0, np.nan) <= 0.5
+    # Touch & Reject: precio cerca de EMA (≤ touch_mult × ATR)
+    touch_long  = (close_1 - ema21_1).abs() / atr_1.replace(0, np.nan) <= cfg.touch_mult
+    touch_short = (close_1 - ema21_1).abs() / atr_1.replace(0, np.nan) <= cfg.touch_mult
 
     # LONG conditions
     long_signal = (

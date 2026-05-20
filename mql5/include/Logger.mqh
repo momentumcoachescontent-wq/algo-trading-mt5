@@ -178,6 +178,72 @@ public:
                              0, price, volume, 0, 0, pnl);
       SendEvent(json);
    }
+
+   //--- Evaluación de señal con campos TouchZoneEngine (v4321+)
+   //    Envía evento signal_eval al Worker; capturado en signal_evals.raw_payload
+   void SignalEvalTZ(
+      string symbol,
+      string candidateDir,         // "BUY" | "SELL" | "UNDECIDED"
+      int    h4Signal,             // 1=LONG, -1=SHORT, 0=NONE
+      string touchZoneMode,        // "exact" | "soft" | "extended"
+      double touchZoneScore,       // 0.0 – 1.0
+      double touchAtr,             // valor ATR en la barra
+      double distEmaAtr,           // |close-ema|/atr
+      string entryCohort,          // cohort label o ""
+      string touchRuleVersion,     // "v1.0"
+      string blockReason,          // "" si entra vivo
+      bool   cbOk,
+      double ddPct
+   )
+   {
+      string cohortJson  = (entryCohort  != "") ? "\"" + entryCohort  + "\"" : "null";
+      string blockJson   = (blockReason  != "") ? "\"" + blockReason  + "\"" : "null";
+
+      string json = StringFormat(
+         "{\"event\":\"signal_eval\",\"symbol\":\"%s\","
+         "\"ea_version\":\"%s\",\"phase\":\"F4\","
+         "\"direction\":\"%s\",\"h4_signal\":%d,"
+         "\"atr_h4\":%.6f,\"distance_to_ema_atr\":%.4f,"
+         "\"touch_zone_mode\":\"%s\",\"touch_zone_score\":%.4f,"
+         "\"touch_atr\":%.6f,\"candidate_direction\":\"%s\","
+         "\"entry_cohort\":%s,\"touch_rule_version\":\"%s\","
+         "\"block_reason\":%s,\"cb_ok\":%s,\"dd_pct\":%.2f}",
+         symbol, m_eaVersion, candidateDir, h4Signal,
+         touchAtr, distEmaAtr,
+         touchZoneMode, touchZoneScore,
+         touchAtr, candidateDir,
+         cohortJson, touchRuleVersion,
+         blockJson,
+         cbOk ? "true" : "false", ddPct
+      );
+      SendEvent(json);
+   }
+
+   //--- Trade abierto con campos de cohort TouchZone (v4321+)
+   void TradeOpenTZ(ulong ticket, string direction, double entryPrice,
+                    double volume, double sl, double tp, double drawdownPct,
+                    string entryCohort, double touchZoneScore, string touchZoneMode,
+                    double touchAtr, string touchRuleVersion)
+   {
+      PrintFormat("[LOGGER] TradeOpenTZ | ticket=%I64u | dir=%s | entry=%.5f | cohort=%s | score=%.3f | tier=%s",
+                  ticket, direction, entryPrice, entryCohort, touchZoneScore, touchZoneMode);
+
+      string json = StringFormat(
+         "{\"event\":\"trade_open\",\"ticket\":%I64u,\"symbol\":\"%s\","
+         "\"direction\":\"%s\",\"open_price\":%.5f,\"close_price\":null,"
+         "\"lots\":%.4f,\"sl\":%.5f,\"tp\":%.5f,\"pnl\":null,"
+         "\"ea_version\":\"%s\",\"phase\":\"F4\","
+         "\"entry_cohort\":\"%s\",\"touch_zone_score\":%.4f,"
+         "\"touch_zone_mode\":\"%s\",\"touch_atr\":%.6f,"
+         "\"touch_rule_version\":\"%s\",\"dd_pct\":%.2f}",
+         ticket, _Symbol, direction,
+         entryPrice, volume, sl, tp,
+         m_eaVersion,
+         entryCohort, touchZoneScore, touchZoneMode, touchAtr,
+         touchRuleVersion, drawdownPct
+      );
+      SendEvent(json);
+   }
 };
 
 #endif
