@@ -27,6 +27,7 @@
 - `STAGE10D_PHASE1_D1_CONTEXT_CLOSURE.md`
 - `STAGE10D_PHASE1_V4431_SOURCE_MANIFEST.md`
 - `STAGE10D_PHASE1_OFFLINE_REPLAY_AND_FORWARD_GATE.md`
+- `STAGE10D_PHASE1_LOCAL_FORWARD_RUNBOOK.md`
 - `../adr/ADR-016-stage10d-donchian-breakout-challenger.md`
 
 ## Program relationship
@@ -64,6 +65,8 @@ filtered_h4_signal
 
 Only a raw signal aligned with the discrete D1 bias can be promoted. Neutral or opposite candidates remain observable for research and are blocked before `ENTRY_READY`.
 
+The final validator also isolates the exact v4.43.1 EA marker before evaluating a mixed MT5 daily log. Events emitted by the active v4.43.0 real EA cannot satisfy or fail the shadow gate.
+
 ## Current phase gate
 
 ```text
@@ -75,6 +78,7 @@ Phase 1 shadow startup safety = PASS
 Phase 1 webhook authentication = PASS
 Phase 1 Magic/boot isolation = PASS
 Phase 1 July 8 contract replay = PASS
+Phase 1 mixed-log isolation regression = IMPLEMENTED
 Phase 1 first organic H4 evaluation = PENDING
 Phase 2 authorization = DENIED
 ```
