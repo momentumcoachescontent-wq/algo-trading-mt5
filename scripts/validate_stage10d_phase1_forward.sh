@@ -11,7 +11,7 @@ JSON_OUT="${2:-data/processed/stage10d_phase1_forward_gate.json}"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 cd "$REPO_ROOT"
-python3 python/pipeline/validate_stage10d_phase1_shadow.py \
+python3 python/pipeline/validate_stage10d_phase1_shadow_strict.py \
   "$LOG_PATH" \
   --expected-magic 20260711 \
   --require-evaluation \
