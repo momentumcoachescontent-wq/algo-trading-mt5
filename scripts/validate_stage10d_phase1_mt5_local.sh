@@ -58,6 +58,6 @@ echo "Log      : $LOG_PATH"
 echo "JSON out : $JSON_OUT"
 echo
 
-"$REPO_ROOT/scripts/validate_stage10d_phase1_forward.sh" \
+bash "$REPO_ROOT/scripts/validate_stage10d_phase1_forward.sh" \
   "$LOG_PATH" \
   "$JSON_OUT"
