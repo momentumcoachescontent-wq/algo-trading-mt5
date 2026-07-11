@@ -6,7 +6,7 @@
 |---|---|---|
 | Stage10B | Controlled frequency pilot | Closed; not promoted |
 | Stage10C | USDJPY-first governance reset and live core baseline | Active core; unchanged by Stage10D |
-| Stage10D | Momentum continuation challenger research | Phase 0 closed; Phase 1 pending review |
+| Stage10D | Momentum continuation challenger research | Phase 1 research closed; production integration blocked by missing active `.mqh` sources |
 
 ## Stage10C documents
 
@@ -20,10 +20,11 @@
 - `STAGE10C_TOUCH_GAP_INSTRUMENTATION.md`
 - `STAGE10C_WORKER_POLICY_DESIGN.md`
 
-## Stage10D foundation documents
+## Stage10D documents
 
 - `STAGE10D_PROGRAM_CHARTER.md`
 - `STAGE10D_PHASE0_FOUNDATION_AND_READINESS.md`
+- `STAGE10D_PHASE1_D1_CONTEXT_CLOSURE.md`
 - `../adr/ADR-016-stage10d-donchian-breakout-challenger.md`
 
 ## Program relationship
@@ -48,6 +49,19 @@ No separate Pilar C execution stream remains.
 
 ## Current phase gate
 
-Phase 0 is closed.
+Phase 1 closed the D1 semantic contract and identified two stale candidate events around the July 8 D1 transition.
 
-The next permitted activity is Stage10D Phase 1 — D1 Context Closure. No Donchian implementation or strategy backtest may begin before Phase 1 is reviewed and closed.
+The exact active v4.43.0 files below are required before Phase 1 can be production-integrated:
+
+- `H4Signal.mqh`
+- `D1Context.mqh`
+
+Until they are imported, patched, compiled and replay-validated:
+
+```text
+Phase 1 research/contract = PASS
+Phase 1 production integration = BLOCKED_MISSING_SOURCE
+Phase 2 authorization = DENIED
+```
+
+No Donchian implementation or strategy backtest may begin while this gate remains open.
