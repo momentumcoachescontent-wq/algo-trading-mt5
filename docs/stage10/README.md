@@ -6,7 +6,7 @@
 |---|---|---|
 | Stage10B | Controlled frequency pilot | Closed; not promoted |
 | Stage10C | USDJPY-first governance reset and live core baseline | Active core; unchanged by Stage10D |
-| Stage10D | Momentum continuation challenger research | Phase 1 research closed; production integration blocked by missing active `.mqh` sources |
+| Stage10D | Momentum continuation challenger research | Phase 1 implemented; MetaEditor compile and shadow replay pending |
 
 ## Stage10C documents
 
@@ -25,6 +25,7 @@
 - `STAGE10D_PROGRAM_CHARTER.md`
 - `STAGE10D_PHASE0_FOUNDATION_AND_READINESS.md`
 - `STAGE10D_PHASE1_D1_CONTEXT_CLOSURE.md`
+- `STAGE10D_PHASE1_V4431_SOURCE_MANIFEST.md`
 - `../adr/ADR-016-stage10d-donchian-breakout-challenger.md`
 
 ## Program relationship
@@ -47,21 +48,30 @@ Pilar C is absorbed into Stage10D:
 
 No separate Pilar C execution stream remains.
 
-## Current phase gate
+## Current Phase 1 finding
 
-Phase 1 closed the D1 semantic contract and identified two stale candidate events around the July 8 D1 transition.
+The exact active v4.43.0 sources disproved the initial stale-cache hypothesis.
 
-The exact active v4.43.0 files below are required before Phase 1 can be production-integrated:
+`CH4Signal::Evaluate()` generated the H4 BUY/SELL pattern independently of `bias_d1`; the bias only selected a diagnostic fail reason when no pattern existed. Therefore a raw candidate could be generated while D1 was neutral or opposite.
 
-- `H4Signal.mqh`
-- `D1Context.mqh`
-
-Until they are imported, patched, compiled and replay-validated:
+The v4.43.1 candidate now separates:
 
 ```text
-Phase 1 research/contract = PASS
-Phase 1 production integration = BLOCKED_MISSING_SOURCE
+raw_h4_signal
+filtered_h4_signal
+```
+
+Only a raw signal aligned with the discrete D1 bias can be promoted. Neutral or opposite candidates remain observable for research and are blocked before `ENTRY_READY`.
+
+## Current phase gate
+
+```text
+Phase 1 diagnosis = PASS
+Phase 1 implementation = PASS
+Phase 1 static tests = PASS
+Phase 1 MetaEditor compile = PENDING USER VALIDATION
+Phase 1 shadow/replay = PENDING USER VALIDATION
 Phase 2 authorization = DENIED
 ```
 
-No Donchian implementation or strategy backtest may begin while this gate remains open.
+No Donchian implementation or strategy backtest may begin while the compile and replay gate remains open.
