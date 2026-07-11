@@ -26,3 +26,28 @@ Core rule:
 
 ```text
 ENTRY_READY != ORDER_ALLOWED
+```
+
+---
+
+# 2. Stage10D successor relationship
+
+Stage10D is a separate research challenger and does not reopen or relax the Stage10C design.
+
+Stage10C remains the production core, governance baseline and comparison control. Stage10D investigates whether a Donchian breakout continuation entry can add an independent edge in market states where Stage10C does not receive a valid EMA21 pullback.
+
+The following rules apply:
+
+- Stage10C parameters, entry logic and management remain unchanged.
+- Stage10D begins offline and cannot send orders.
+- Stage10D entry and management experiments are separated.
+- Stage10D must prove complementarity, not only higher frequency.
+- The original F5A.6 Pilar C research stream is absorbed into Stage10D Phases 2 and 3.
+
+Authoritative Stage10D foundation documents:
+
+- `STAGE10D_PROGRAM_CHARTER.md`
+- `STAGE10D_PHASE0_FOUNDATION_AND_READINESS.md`
+- `../adr/ADR-016-stage10d-donchian-breakout-challenger.md`
+
+This addendum does not authorize Donchian implementation, backtest optimization, shadow deployment or live capital.
