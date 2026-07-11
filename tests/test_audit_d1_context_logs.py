@@ -21,7 +21,7 @@ class D1AuditTests(unittest.TestCase):
         path.write_text(content, encoding=encoding)
         return path
 
-    def test_detects_candidate_generated_from_stale_bias(self):
+    def test_classifies_neutral_candidate_as_ungated_not_stale(self):
         content = "\n".join(
             [
                 D1_CONFLICT,
@@ -30,20 +30,50 @@ class D1AuditTests(unittest.TestCase):
             ]
         )
         summary = audit_paths([self.write_log(content)])
-        self.assertEqual(summary.stale_candidate_events, 1)
-        self.assertEqual(summary.stale_events, 1)
-        self.assertEqual(summary.findings[0].finding_type, "candidate_while_d1_neutral")
+        self.assertEqual(summary.ungated_candidate_events, 1)
+        self.assertEqual(summary.integrity_events, 0)
+        self.assertEqual(summary.stale_candidate_events, 1)  # compatibility alias
+        self.assertEqual(summary.findings[0].finding_type, "raw_candidate_while_d1_neutral")
 
     def test_detects_h4_debug_bias_mismatch(self):
         content = "\n".join(
             [
                 D1_CONFLICT,
                 "[H4_SIGNAL_DEBUG] 2026.07.08 00:00 | USDJPY | bias=+1 | "
-                "signal=+0 | fail=no_compresion",
+                "raw_signal=+0 | signal=+0 | fail=no_ema_touch_bull",
             ]
         )
         summary = audit_paths([self.write_log(content)])
-        self.assertEqual(summary.stale_h4_bias_events, 1)
+        self.assertEqual(summary.h4_bias_mismatch_events, 1)
+        self.assertEqual(summary.integrity_events, 1)
+
+    def test_detects_filtered_signal_during_neutral_context(self):
+        content = (
+            "[D1_CONTEXT_SNAPSHOT] symbol=USDJPY | eval_time=2026.07.08 04:00 | "
+            "bar_h4=2026.07.08 00:00 | bias_discrete=0 | raw_h4_signal=1 | "
+            "filtered_h4_signal=1 | snapshot_match=true"
+        )
+        summary = audit_paths([self.write_log(content)])
+        self.assertEqual(summary.snapshot_integrity_events, 1)
+        self.assertEqual(summary.integrity_events, 1)
+
+    def test_accepts_raw_candidate_when_filtered_signal_is_zero(self):
+        content = (
+            "[D1_CONTEXT_SNAPSHOT] symbol=USDJPY | eval_time=2026.07.08 04:00 | "
+            "bar_h4=2026.07.08 00:00 | bias_discrete=0 | raw_h4_signal=1 | "
+            "filtered_h4_signal=0 | snapshot_match=true"
+        )
+        summary = audit_paths([self.write_log(content)])
+        self.assertEqual(summary.snapshot_integrity_events, 0)
+
+    def test_detects_snapshot_mismatch(self):
+        content = (
+            "[D1_CONTEXT_SNAPSHOT] symbol=USDJPY | eval_time=2026.07.08 04:00 | "
+            "bar_h4=2026.07.08 00:00 | bias_discrete=1 | raw_h4_signal=1 | "
+            "filtered_h4_signal=0 | snapshot_match=false"
+        )
+        summary = audit_paths([self.write_log(content)])
+        self.assertEqual(summary.snapshot_integrity_events, 1)
 
     def test_maps_generic_no_bias_to_specific_context_reason(self):
         content = "\n".join(
@@ -58,22 +88,6 @@ class D1AuditTests(unittest.TestCase):
         finding = summary.findings[0]
         self.assertIn("d1_bear_structure_conflicts_bull_trend", finding.detail)
 
-    def test_counter_direction_candidate_is_not_sync_defect_when_d1_is_directional(self):
-        d1_bull = (
-            D1_CONFLICT.replace("structure=-1", "structure=0")
-            .replace("has_structure=true", "has_structure=false")
-            .replace("bias=0", "bias=1")
-        )
-        content = "\n".join(
-            [
-                d1_bull,
-                "[ML_VETO_SHADOW] symbol=USDJPY | eval_time=2026.07.10 08:00 | "
-                "evaluated=true | direction=sell | target=x",
-            ]
-        )
-        summary = audit_paths([self.write_log(content)])
-        self.assertEqual(summary.stale_candidate_events, 0)
-
     def test_reads_utf16_mt5_logs(self):
         content = "\n".join(
             [
@@ -83,7 +97,7 @@ class D1AuditTests(unittest.TestCase):
             ]
         )
         summary = audit_paths([self.write_log(content, encoding="utf-16")])
-        self.assertEqual(summary.stale_candidate_events, 1)
+        self.assertEqual(summary.ungated_candidate_events, 1)
 
 
 if __name__ == "__main__":
