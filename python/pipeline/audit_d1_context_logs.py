@@ -1,8 +1,11 @@
-"""Audit Stage10C MT5 logs for D1/H4 context synchronization defects.
+"""Audit Stage10C/Stage10D MT5 logs for D1/H4 integrity defects.
 
-The CLI accepts UTF-16 or UTF-8 MT5 log files, reconstructs D1 context
-transitions and flags H4/candidate decisions that used a bias inconsistent with
-the latest D1 snapshot.
+The auditor separates three concerns:
+
+* a real H4 bias/snapshot mismatch;
+* a raw H4 candidate produced while D1 is neutral (expected research signal,
+  but it must be filtered before ENTRY_READY);
+* generic D1 block telemetry that should use a specific context reason.
 """
 
 from __future__ import annotations
@@ -23,7 +26,7 @@ from python.research.d1_context_contract import (
 
 _D1_DEBUG_RE = re.compile(
     r"\[D1_DEBUG\]\s+(?P<symbol>\w+)\s+\|\s+D1=(?P<d1_bar>\d{4}\.\d{2}\.\d{2})"
-    r"\s+\|\s+structure=(?P<structure>-?\d+)"
+    r".*?\|\s+structure=(?P<structure>-?\d+)"
     r"\s+\|\s+has_structure=(?P<has_structure>true|false)"
     r".*?emaRising=(?P<ema_rising>true|false)"
     r"\s+\|\s+emaFalling=(?P<ema_falling>true|false)"
@@ -54,7 +57,13 @@ _D1_WEIGHTED_RE = re.compile(
     r".*?bias_d1=(?P<weighted>-?\d+(?:\.\d+)?)"
 )
 
-_RESTART_RE = re.compile(r"\[(?:EA_DEINIT|SCOPE_INIT)\]")
+_CONTEXT_SNAPSHOT_RE = re.compile(
+    r"\[D1_CONTEXT_SNAPSHOT\].*?eval_time=(?P<eval_time>[^|]+?)\s+\|"
+    r".*?bias_discrete=(?P<bias>-?\d+)"
+    r".*?raw_h4_signal=(?P<raw>-?\d+)"
+    r".*?filtered_h4_signal=(?P<filtered>-?\d+)"
+    r".*?snapshot_match=(?P<snapshot_match>true|false)"
+)
 
 
 def _as_bool(value: str) -> bool:
@@ -86,17 +95,34 @@ class AuditSummary:
     files: int
     d1_snapshots: int
     d1_transitions: int
-    stale_h4_bias_events: int
-    stale_candidate_events: int
+    h4_bias_mismatch_events: int
+    ungated_candidate_events: int
+    snapshot_integrity_events: int
     generic_no_bias_events: int
     findings: tuple[AuditFinding, ...]
 
     @property
+    def integrity_events(self) -> int:
+        return self.h4_bias_mismatch_events + self.snapshot_integrity_events
+
+    # Backward-compatible names used by the first Phase 1 draft.
+    @property
+    def stale_h4_bias_events(self) -> int:
+        return self.h4_bias_mismatch_events
+
+    @property
+    def stale_candidate_events(self) -> int:
+        return self.ungated_candidate_events
+
+    @property
     def stale_events(self) -> int:
-        return self.stale_h4_bias_events + self.stale_candidate_events
+        return self.integrity_events
 
     def to_dict(self) -> dict:
         result = asdict(self)
+        result["integrity_events"] = self.integrity_events
+        result["stale_h4_bias_events"] = self.stale_h4_bias_events
+        result["stale_candidate_events"] = self.stale_candidate_events
         result["stale_events"] = self.stale_events
         return result
 
@@ -115,8 +141,9 @@ def audit_paths(paths: Iterable[Path]) -> AuditSummary:
     findings: list[AuditFinding] = []
     snapshots = 0
     transitions = 0
-    stale_h4 = 0
-    stale_candidates = 0
+    h4_mismatches = 0
+    ungated_candidates = 0
+    snapshot_integrity = 0
     generic_no_bias = 0
 
     for path, line_number, line in iter_lines(selected):
@@ -162,6 +189,39 @@ def audit_paths(paths: Iterable[Path]) -> AuditSummary:
             previous_snapshot_id = snapshot.snapshot_id
             continue
 
+        context_match = _CONTEXT_SNAPSHOT_RE.search(line)
+        if context_match:
+            groups = context_match.groupdict()
+            bias = int(groups["bias"])
+            raw_signal = int(groups["raw"])
+            filtered_signal = int(groups["filtered"])
+            snapshot_match = _as_bool(groups["snapshot_match"])
+
+            invalid = (
+                not snapshot_match
+                or (bias == 0 and filtered_signal != 0)
+                or (filtered_signal != 0 and filtered_signal != bias)
+            )
+            if invalid:
+                snapshot_integrity += 1
+                findings.append(
+                    AuditFinding(
+                        finding_type="d1_h4_gate_integrity_failure",
+                        source_file=path.name,
+                        line_number=line_number,
+                        event_time=groups["eval_time"].strip(),
+                        snapshot_id=current.snapshot_id if current else "",
+                        expected_bias=bias,
+                        observed_bias=filtered_signal,
+                        context_reason=current.reason.value if current else "",
+                        detail=(
+                            f"snapshot_match={snapshot_match}, raw_signal={raw_signal}, "
+                            f"filtered_signal={filtered_signal}, bias={bias}"
+                        ),
+                    )
+                )
+            continue
+
         if current is None:
             continue
 
@@ -170,10 +230,10 @@ def audit_paths(paths: Iterable[Path]) -> AuditSummary:
             observed = int(h4_match.group("bias"))
             check = check_bias_synchronization(current, observed)
             if check.stale:
-                stale_h4 += 1
+                h4_mismatches += 1
                 findings.append(
                     AuditFinding(
-                        finding_type="stale_h4_bias",
+                        finding_type="h4_bias_mismatch",
                         source_file=path.name,
                         line_number=line_number,
                         event_time=h4_match.group("bar").strip(),
@@ -181,7 +241,7 @@ def audit_paths(paths: Iterable[Path]) -> AuditSummary:
                         expected_bias=check.expected_bias,
                         observed_bias=check.observed_bias,
                         context_reason=current.reason.value,
-                        detail="H4 signal debug used a bias different from the latest D1 snapshot.",
+                        detail="H4 debug consumed a bias different from the latest D1 snapshot.",
                     )
                 )
             continue
@@ -191,10 +251,10 @@ def audit_paths(paths: Iterable[Path]) -> AuditSummary:
             direction = candidate_match.group("direction")
             observed = candidate_direction_bias(direction)
             if current.discrete_bias == 0 and observed != 0:
-                stale_candidates += 1
+                ungated_candidates += 1
                 findings.append(
                     AuditFinding(
-                        finding_type="candidate_while_d1_neutral",
+                        finding_type="raw_candidate_while_d1_neutral",
                         source_file=path.name,
                         line_number=line_number,
                         event_time=candidate_match.group("eval_time").strip(),
@@ -203,8 +263,9 @@ def audit_paths(paths: Iterable[Path]) -> AuditSummary:
                         observed_bias=observed,
                         context_reason=current.reason.value,
                         detail=(
-                            f"Candidate direction={direction} was generated while "
-                            "the latest D1 snapshot resolved to neutral."
+                            f"Raw candidate direction={direction} exists while D1 is neutral. "
+                            "This is research evidence, not stale state; it must be filtered "
+                            "before ENTRY_READY."
                         ),
                     )
                 )
@@ -231,16 +292,14 @@ def audit_paths(paths: Iterable[Path]) -> AuditSummary:
                         ),
                     )
                 )
-            continue
-
-        _RESTART_RE.search(line)
 
     return AuditSummary(
         files=len(selected),
         d1_snapshots=snapshots,
         d1_transitions=transitions,
-        stale_h4_bias_events=stale_h4,
-        stale_candidate_events=stale_candidates,
+        h4_bias_mismatch_events=h4_mismatches,
+        ungated_candidate_events=ungated_candidates,
+        snapshot_integrity_events=snapshot_integrity,
         generic_no_bias_events=generic_no_bias,
         findings=tuple(findings),
     )
@@ -266,9 +325,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("inputs", nargs="+", help="MT5 log files or directories")
     parser.add_argument("--json-out", type=Path, help="Optional output JSON path")
     parser.add_argument(
+        "--fail-on-integrity",
+        action="store_true",
+        help="Exit with status 2 when D1/H4 mismatch or gate integrity failure exists",
+    )
+    parser.add_argument(
         "--fail-on-stale",
         action="store_true",
-        help="Exit with status 2 when stale D1/H4 state is detected",
+        help="Deprecated alias for --fail-on-integrity",
     )
     return parser
 
@@ -282,7 +346,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.json_out:
         args.json_out.parent.mkdir(parents=True, exist_ok=True)
         args.json_out.write_text(rendered + "\n", encoding="utf-8")
-    if args.fail_on_stale and summary.stale_events:
+    if (args.fail_on_integrity or args.fail_on_stale) and summary.integrity_events:
         return 2
     return 0
 
