@@ -6,7 +6,7 @@
 |---|---|---|
 | Stage10B | Controlled frequency pilot | Closed; not promoted |
 | Stage10C | USDJPY-first governance reset and live core baseline | Active core; unchanged by Stage10D |
-| Stage10D | Momentum continuation challenger research | Phase 1 compile/startup/replay passed; first organic H4 evaluation pending |
+| Stage10D | Momentum continuation challenger research | Phase 1 compile/startup/replay/CI passed; first organic H4 evaluation pending |
 
 ## Stage10C documents
 
@@ -78,7 +78,8 @@ Phase 1 shadow startup safety = PASS
 Phase 1 webhook authentication = PASS
 Phase 1 Magic/boot isolation = PASS
 Phase 1 July 8 contract replay = PASS
-Phase 1 mixed-log isolation regression = IMPLEMENTED
+Phase 1 mixed-log isolation regression = PASS (GitHub Actions)
+Phase 1 targeted CI = PASS
 Phase 1 first organic H4 evaluation = PENDING
 Phase 2 authorization = DENIED
 ```
