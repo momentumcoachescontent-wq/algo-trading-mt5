@@ -17,6 +17,8 @@ on:
       - "tests/test_replay_stage10d_phase1_contract.py"
       - "tests/test_validate_stage10d_phase1_shadow.py"
       - "tests/test_validate_stage10d_phase1_shadow_strict.py"
+      - "docs/stage10/README.md"
+      - "docs/stage10/STAGE10D_PHASE1_*.md"
       - ".github/workflows/stage10d-phase1-tests.yml"
   workflow_dispatch:
 
