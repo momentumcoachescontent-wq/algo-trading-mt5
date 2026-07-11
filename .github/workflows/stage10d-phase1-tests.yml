@@ -39,6 +39,21 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Compile Phase 1 Python modules
+        run: |
+          python -m py_compile \
+            python/pipeline/audit_d1_context_logs.py \
+            python/pipeline/replay_stage10d_phase1_contract.py \
+            python/pipeline/validate_stage10d_phase1_shadow.py \
+            python/pipeline/validate_stage10d_phase1_shadow_strict.py \
+            python/research/d1_context_contract.py \
+            python/research/h4_d1_gate_contract.py
+
+      - name: Validate Phase 1 Bash syntax
+        run: |
+          bash -n scripts/validate_stage10d_phase1_forward.sh
+          bash -n scripts/validate_stage10d_phase1_mt5_local.sh
+
       - name: D1 and H4 contract tests
         run: python -m unittest discover -s tests -p "test_*d1*.py" -v
 
