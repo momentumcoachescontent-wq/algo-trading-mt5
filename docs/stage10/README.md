@@ -6,7 +6,7 @@
 |---|---|---|
 | Stage10B | Controlled frequency pilot | Closed; not promoted |
 | Stage10C | USDJPY-first governance reset and live core baseline | Active core; unchanged by Stage10D |
-| Stage10D | Momentum continuation challenger research | Phase 1 implemented; MetaEditor compile and shadow replay pending |
+| Stage10D | Momentum continuation challenger research | Phase 1 compile/startup/replay passed; first organic H4 evaluation pending |
 
 ## Stage10C documents
 
@@ -26,6 +26,7 @@
 - `STAGE10D_PHASE0_FOUNDATION_AND_READINESS.md`
 - `STAGE10D_PHASE1_D1_CONTEXT_CLOSURE.md`
 - `STAGE10D_PHASE1_V4431_SOURCE_MANIFEST.md`
+- `STAGE10D_PHASE1_OFFLINE_REPLAY_AND_FORWARD_GATE.md`
 - `../adr/ADR-016-stage10d-donchian-breakout-challenger.md`
 
 ## Program relationship
@@ -68,10 +69,14 @@ Only a raw signal aligned with the discrete D1 bias can be promoted. Neutral or 
 ```text
 Phase 1 diagnosis = PASS
 Phase 1 implementation = PASS
-Phase 1 static tests = PASS
-Phase 1 MetaEditor compile = PENDING USER VALIDATION
-Phase 1 shadow/replay = PENDING USER VALIDATION
+Phase 1 static/validator tests = PASS
+Phase 1 MetaEditor compile = PASS
+Phase 1 shadow startup safety = PASS
+Phase 1 webhook authentication = PASS
+Phase 1 Magic/boot isolation = PASS
+Phase 1 July 8 contract replay = PASS
+Phase 1 first organic H4 evaluation = PENDING
 Phase 2 authorization = DENIED
 ```
 
-No Donchian implementation or strategy backtest may begin while the compile and replay gate remains open.
+No Donchian implementation or strategy backtest may begin while the organic H4 forward gate remains open.
