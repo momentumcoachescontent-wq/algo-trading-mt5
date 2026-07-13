@@ -191,16 +191,18 @@ A touch is directional and based on the completed H4 candle range, not only the 
 #### BUY-side geometric gap
 
 ```text
-touch_gap_buy_price = max(0, low - ema21)
-touch_gap_buy_atr = touch_gap_buy_price / atr14
+touch_gap_buy_price = high >= ema21 ? max(0, low - ema21) : null
+touch_gap_buy_atr = touch_gap_buy_price is not null ? touch_gap_buy_price / atr14 : null
 ```
 
 #### SELL-side geometric gap
 
 ```text
-touch_gap_sell_price = max(0, ema21 - high)
-touch_gap_sell_atr = touch_gap_sell_price / atr14
+touch_gap_sell_price = low <= ema21 ? max(0, ema21 - high) : null
+touch_gap_sell_atr = touch_gap_sell_price is not null ? touch_gap_sell_price / atr14 : null
 ```
+
+A direction-specific gap is `null` when the entire candle is on the wrong side of EMA21 for that direction. It must not be classified as a zero-distance touch.
 
 #### Classification
 
@@ -259,8 +261,10 @@ A breakout leg is a unique directional market movement, not every consecutive cl
 Required identity:
 
 ```text
-breakout_leg_id = symbol + direction + leg_start_time + donchian_N
+breakout_leg_id = symbol + "|" + direction + "|" + iso8601(leg_start_time) + "|" + str(donchian_N)
 ```
+
+The delimiter and normalized timestamp are mandatory so adjacent fields cannot produce ambiguous or colliding identifiers.
 
 A new leg cannot begin until a reset condition is met. Reset definitions will be tested in Phase 3, but duplicate consecutive signals from the same leg must never be counted as independent opportunities by default.
 
