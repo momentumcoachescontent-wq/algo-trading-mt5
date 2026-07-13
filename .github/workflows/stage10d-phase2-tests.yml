@@ -1,0 +1,38 @@
+name: Stage10D Phase 2 Tests
+
+on:
+  pull_request:
+    paths:
+      - "python/pipeline/stage10d_phase2_data_readiness.py"
+      - "python/research/stage10d_data_readiness.py"
+      - "tests/test_stage10d_data_readiness.py"
+      - "docs/stage10/STAGE10D_PHASE2_*.md"
+      - "docs/stage10/README.md"
+      - ".github/workflows/stage10d-phase2-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  phase2-data-readiness-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compile Phase 2 modules
+        run: |
+          python -m py_compile \
+            python/research/stage10d_data_readiness.py \
+            python/pipeline/stage10d_phase2_data_readiness.py
+
+      - name: Run Phase 2 data readiness tests
+        run: python -m unittest tests.test_stage10d_data_readiness -v
