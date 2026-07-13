@@ -2,11 +2,21 @@
 
 ## Status
 
-**IMPLEMENTED — PENDING METAEDITOR COMPILE AND SHADOW REPLAY**
+**CLOSED — PASS**
 
-The exact active v4.43.0 sources were recovered and verified against the supplied SHA-256 manifest. The code-level root cause is now confirmed and a v4.43.1 isolated candidate has been produced.
+Stage10D Phase 1 is formally closed after the isolated v4.43.1 candidate compiled, started safely in `SHADOW_ONLY`, passed the July 8 contract replay, passed targeted CI, and passed the organic H4 forward gate on July 13, 2026.
 
-Phase 2 remains blocked until v4.43.1 compiles and passes the Phase 1 shadow/replay gate.
+Final validator result:
+
+```text
+status=PASS_PHASE1_FORWARD_GATE
+evaluations=2
+edge_webhook_ok=2
+failed_checks=0
+order_like_events=0
+```
+
+Phase 2 is technically unblocked by the Phase 1 gate, but it must not begin until explicitly authorized.
 
 ## 1. Sources verified
 
@@ -18,74 +28,30 @@ Original files recovered from the active MT5 installation:
 | `D1Context.mqh` | `7c907a83c236b193ed8e16bfa40fdbd5384e07e48d2d48aea86113c88d7114c8` |
 | `H4Signal.mqh` | `ef477d7d4d6f0e07f3813204a3b2475bd7af7d8c4be5e99ed88a3ec822856593` |
 
-The package manifest matched all three files.
+The supplied package manifest matched all three files.
 
-## 2. Confirmed D1 semantics
+## 2. Corrected root cause
 
-The ten historical `no_bias_context` decisions were valid discrete neutralizations:
+The initial stale-cache hypothesis was disproved by inspection of the exact active source.
 
-```text
-structure = -1
-EMA50 rising = true
-D1 close above EMA50 = true
-H4 close above EMA50 = true
-bias_d1_weighted ≈ +0.400
-bias_d1_discrete = 0
-specific reason = d1_bear_structure_conflicts_bull_trend
-```
+`CH4Signal::Evaluate()` calculated `pattern_bull` and `pattern_bear` independently of the discrete D1 bias. The bias was used only to select a diagnostic reason when no H4 pattern existed. Therefore a raw H4 BUY/SELL candidate could exist while D1 was neutral or opposite.
 
-The weighted C1 score and the discrete execution bias represent different contracts. A positive weighted score does not override a neutral discrete bias.
-
-## 3. Corrected root cause
-
-The first Phase 1 draft described the two BUY candidates during neutral D1 as possible stale cached state. Inspection of the exact source disproved that hypothesis.
-
-### Actual defect
-
-`CH4Signal::Evaluate()` calculated `pattern_bull` and `pattern_bear` independently of `bias_d1`:
+Correct classification:
 
 ```text
-raw H4 pattern -> h4_signal
+raw_candidate_while_d1_neutral_or_opposite
 ```
 
-The `bias_d1` argument was used only to select a diagnostic fail reason when no H4 pattern existed. Therefore a valid bullish H4 pattern could return `+1` while the discrete D1 bias was `0` or `-1`.
+The restart correlation was incidental. The candidate disappeared when the two-candle H4 pattern disappeared, not because a stale D1 cache was refreshed.
 
-This contradicted the orchestration comments and intended Stage10C architecture, which stated that H4 used the legacy D1 bias.
+## 3. Corrected v4.43.1 contract
 
-### Why behavior appeared to change after restart
-
-The restart correlation was incidental. Candidate generation depended on whether the H4 two-candle pattern was present, not on a stale D1 cache. Once the H4 pattern disappeared, evaluations returned `no_bias_context`.
-
-The correct classification of the two events is:
-
-```text
-raw_candidate_while_d1_neutral
-```
-
-They are useful research candidates, but they must not become an executable H4 signal.
-
-## 4. v4.43.1 implementation
-
-The candidate is isolated from the active modules:
+The candidate is isolated from the active v4.43.0 modules:
 
 ```text
 MQL5/Include/v31/D1Context.mqh
 MQL5/Include/v31/H4Signal.mqh
 MQL5/Experts/Advisors/EMA_MTF_v4431_stage10c_d1_context_integrity.mq5
-```
-
-The active `v30` modules and v4.43.0 EA are not overwritten.
-
-### H4 raw-versus-filtered contract
-
-`H4Signal` now preserves:
-
-```text
-LastRawSignalDirection
-LastSignalDirection
-LastConsumedBiasD1
-LastD1ContextReason
-LastD1SnapshotId
 ```
 
 Promotion rules:
@@ -98,54 +64,28 @@ Promotion rules:
 | +1 | -1 | 0 | `d1_bias_blocks_opposite_h4_signal` |
 | -1 | +1 | 0 | `d1_bias_blocks_opposite_h4_signal` |
 
-A raw candidate remains observable for Stage10D research, but only the filtered signal can enter the Stage10C decision waterfall.
+A raw candidate remains observable for research. Only the filtered signal can enter the Stage10C decision waterfall.
 
-### D1 snapshot integrity
+## 4. Canonical D1 snapshot integrity
 
-`D1Context` now exposes:
+The EA resolves one canonical D1 snapshot per H4 evaluation and passes the same bias, reason and snapshot identity to H4.
 
-```text
-IsDataValid()
-GetContextReason()
-GetClosedD1Bar()
-GetSnapshotRevision()
-GetSnapshotId()
-```
-
-The EA resolves one D1 snapshot per H4 evaluation and passes the same bias, reason and snapshot identity to H4.
-
-Fail-closed invariant:
+Required invariant:
 
 ```text
 bias_d1_snapshot_id == h4_consumed_d1_snapshot_id
+bias_d1_discrete == h4_consumed_bias
 ```
 
-If false:
+Any mismatch fails closed:
 
 ```text
-h4_signal = 0
-block_reason = d1_context_snapshot_mismatch
-order_send_allowed = false
+filtered_h4_signal=0
+block_reason=d1_context_snapshot_mismatch
+order_send_allowed=false
 ```
 
-### Specific D1 reasons
-
-The implementation distinguishes:
-
-```text
-d1_bull_structure_price_aligned
-d1_bear_structure_price_aligned
-d1_neutral_structure_bull_trend
-d1_neutral_structure_bear_trend
-d1_bear_structure_conflicts_bull_trend
-d1_bull_structure_conflicts_bear_trend
-d1_context_neutral
-d1_context_values_invalid
-```
-
-### Telemetry added
-
-Each edge payload now exposes:
+Telemetry includes:
 
 ```text
 bias_d1_weighted
@@ -160,63 +100,106 @@ h4_raw_signal
 h4_signal
 ```
 
-`[D1_CONTEXT_SNAPSHOT]` logs the exact snapshot consumed by H4.
-
 ## 5. Security and isolation
 
-- The v4.43.1 source contains no committed webhook secret.
-- `InpWebhookSecret` defaults to an empty string.
-- The EA defaults remain `SHADOW_ONLY` and `AllowRealTrading=false`.
-- No Stage10C risk, SL, TP, touch, compression or governance parameter was changed.
-- The implementation corrects signal-direction integrity only.
+Validated controls:
 
-## 6. Validation completed
+```text
+version=v4.43.1
+execution_mode=SHADOW_ONLY
+capital_enabled=false
+order_send_allowed=false
+Magic=20260711
+webhook ea_init status=200
+order-like events=0
+```
 
-Twelve local contract tests passed:
+The v4.43.1 source contains no committed webhook secret. The active v4.43.0 real EA remains unchanged with independent Magic `20260527`.
 
-- neutral D1 blocks raw BUY;
-- neutral D1 blocks raw SELL;
-- opposite D1 blocks the candidate;
-- aligned candidates are promoted;
-- snapshot mismatch fails closed;
-- raw and filtered directions are both preserved;
-- one snapshot is consumed by the EA and H4;
-- specific D1 reasons are exposed;
-- payload contains the new integrity fields;
-- the repository candidate contains no webhook secret;
-- the EA uses isolated `v31` modules;
-- patched module delimiter balance is valid.
+The strict validator filters mixed MT5 daily logs by the exact v4.43.1 EA marker, so v4.43.0 events cannot satisfy or fail the shadow gate.
 
-The MT5 auditor has also been corrected: a raw candidate during neutral D1 is no longer labeled stale state. It is an ungated research candidate and becomes an integrity defect only if the filtered H4 signal remains nonzero.
+## 6. Offline and CI validation
 
-## 7. Patched candidate hashes
+The July 8 deterministic contract replay passed:
 
-| File | SHA-256 |
-|---|---|
-| `v31/D1Context.mqh` | `df5d22b71282f996641279861df8b99285092c3e66c5035e072c17dcec4e7664` |
-| `v31/H4Signal.mqh` | `911cd26588ccaa2a593937f9bf4b4a2f36b56612c8dc5846348012d279d0d1c5` |
-| `EMA_MTF_v4431_stage10c_d1_context_integrity.mq5` | `56caf0d648c5df279ad3f0cdeefa10b540c2184d179eb9872ad0887f70b855b8` |
+```text
+events_total=2
+events_passed=2
+defective_promotions_prevented=2
+```
 
-## 8. Remaining compile and shadow gate
+Targeted GitHub Actions passed, covering:
 
-Phase 1 closes only after the user validates in MetaEditor and MT5:
+- Python module compilation;
+- Bash syntax;
+- D1/H4 contract tests;
+- replay tests;
+- strict mixed-log isolation;
+- rotated-log discovery;
+- direct command-line execution of the discovery helper.
 
-1. Compile v4.43.1 with zero errors.
-2. Do not replace the running v4.43.0 EA during compile testing.
-3. Run v4.43.1 in Strategy Tester or `SHADOW_ONLY`.
-4. Confirm `bias_d1_discrete=0` never produces filtered `h4_signal != 0`.
-5. Confirm opposite D1/H4 directions never produce `ENTRY_READY`.
-6. Confirm `d1_snapshot_match=true` on every evaluation.
-7. Confirm no real order is sent.
-8. Run the auditor with `--fail-on-integrity` and obtain zero integrity events.
+## 7. Organic H4 forward evidence
 
-Current gate:
+The local final gate ran against the MT5 log stream and returned:
+
+```text
+status=PASS_PHASE1_FORWARD_GATE
+session_lines=33
+expected_magic=20260711
+observed_magic=20260711
+evaluations=2
+edge_webhook_ok=2
+failed_checks=0
+```
+
+Evaluations validated:
+
+| Eval time | Bias D1 | Raw H4 | Filtered H4 | Snapshot match | Violations |
+|---|---:|---:|---:|---|---:|
+| 2026-07-13 00:00 | +1 | 0 | 0 | true | 0 |
+| 2026-07-13 04:00 | +1 | 0 | 0 | true | 0 |
+
+All final checks passed:
+
+```text
+latest_v4431_session=PASS
+shadow_execution_scope=PASS
+magic_isolation=PASS
+init_payload_safety=PASS
+ea_init_webhook=PASS
+no_order_activity=PASS
+d1_h4_evaluation_contract=PASS
+evaluation_webhook=PASS
+```
+
+## 8. Phase 1 decision
 
 ```text
 Phase 1 diagnosis = PASS
 Phase 1 implementation = PASS
-Phase 1 static tests = PASS
-Phase 1 MetaEditor compile = PENDING USER VALIDATION
-Phase 1 shadow/replay = PENDING USER VALIDATION
-Phase 2 authorization = DENIED
+Phase 1 static and validator tests = PASS
+Phase 1 MetaEditor compile = PASS
+Phase 1 shadow startup safety = PASS
+Phase 1 webhook authentication = PASS
+Phase 1 Magic/boot isolation = PASS
+Phase 1 July 8 replay = PASS
+Phase 1 mixed-log and rotated-log isolation = PASS
+Phase 1 targeted CI = PASS
+Phase 1 organic H4 forward gate = PASS
+Phase 1 status = CLOSED / PASS
 ```
+
+## 9. Phase boundary
+
+Phase 1 closure does not itself authorize strategy changes or live capital for the challenger.
+
+The recommended next block is Stage10D Phase 2 design and instrumentation:
+
+```text
+touch-gap instrumentation
+historical challenger population
+path-quality reconstruction
+Donchian continuation research in isolated shadow/offline scope
+```
+
+No Stage10C production risk, touch, SL, TP, compression or governance parameter should change as part of the Phase 1 closure.
