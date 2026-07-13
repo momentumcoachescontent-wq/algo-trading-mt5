@@ -60,6 +60,48 @@ class DiscoverStage10DPhase1LogsTests(unittest.TestCase):
 
             self.assertEqual(selected, (mql5_logs / "20260710.log",))
 
+    def test_latest_init_supersedes_older_completed_session(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            logs = root / "Logs"
+            self.write_log(
+                logs / "20260710.log",
+                "[ENTRY_STATE_RESET] symbol=USDJPY | reason=on_init | previous_action=NONE",
+            )
+            self.write_log(
+                logs / "20260711.log",
+                "[D1_CONTEXT_SNAPSHOT] snapshot_match=true | raw_h4_signal=0 | filtered_h4_signal=0",
+                "[EDGE_EVAL_WEBHOOK_OK] status=200",
+            )
+            self.write_log(
+                logs / "20260712.log",
+                "[ENTRY_STATE_RESET] symbol=USDJPY | reason=on_init | previous_action=NONE",
+                "[SCOPE_INIT] resolved_mode=SHADOW_ONLY | order_send_allowed=false",
+            )
+
+            selected = discover_logs(root)
+
+            self.assertEqual(selected, (logs / "20260712.log",))
+
+    def test_latest_init_stream_wins_even_when_older_stream_has_evaluation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            mql5_logs = root / "MQL5" / "Logs"
+            terminal_logs = root / "Logs"
+            self.write_log(
+                mql5_logs / "20260711.log",
+                "[ENTRY_STATE_RESET] symbol=USDJPY | reason=on_init | previous_action=NONE",
+                "[D1_CONTEXT_SNAPSHOT] snapshot_match=true | raw_h4_signal=0 | filtered_h4_signal=0",
+            )
+            self.write_log(
+                terminal_logs / "20260712.log",
+                "[ENTRY_STATE_RESET] symbol=USDJPY | reason=on_init | previous_action=NONE",
+            )
+
+            selected = discover_logs(root)
+
+            self.assertEqual(selected, (terminal_logs / "20260712.log",))
+
     def test_single_complete_file_is_selected_once(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
