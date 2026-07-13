@@ -58,6 +58,7 @@ class Stage10DDataReadinessTests(unittest.TestCase):
             self.assertEqual(bundle.quality.status, "PASS")
             self.assertEqual(bundle.quality.expected_market_closure_gap_count, 1)
             self.assertEqual(bundle.quality.missing_export_segment_gap_count, 0)
+            self.assertEqual(bundle.quality.source_order_violation_count, 0)
             self.assertFalse(bundle.manifest.synthetic)
 
     def test_weekday_missing_bar_fails(self) -> None:
@@ -93,6 +94,23 @@ class Stage10DDataReadinessTests(unittest.TestCase):
             self.assertEqual(bundle.quality.status, "FAIL")
             self.assertEqual(bundle.quality.duplicate_count, 1)
             self.assertEqual(bundle.quality.ohlc_violation_count, 1)
+
+    def test_out_of_order_source_rows_fail_even_when_coverage_is_complete(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "usd_jpy_h4.csv"
+            self.write_csv(
+                path,
+                [
+                    {"time": "2026.07.13 04:00:00", "open": 146.2, "high": 146.5, "low": 146.0, "close": 146.3, "tick_volume": 110},
+                    {"time": "2026.07.13 00:00:00", "open": 146.0, "high": 146.4, "low": 145.8, "close": 146.2, "tick_volume": 100},
+                ],
+            )
+
+            bundle = self.build(path)
+
+            self.assertEqual(bundle.quality.status, "FAIL")
+            self.assertEqual(bundle.quality.source_order_violation_count, 1)
+            self.assertEqual(bundle.quality.missing_export_segment_gap_count, 0)
 
     def test_tab_delimited_split_date_time_mt5_export_is_supported(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -130,6 +148,7 @@ class Stage10DDataReadinessTests(unittest.TestCase):
             manifest = json.loads(outputs["manifest"].read_text(encoding="utf-8"))
             self.assertEqual(manifest["quality_status"], "PASS")
             self.assertEqual(manifest["server_timezone"], "broker-server-time")
+            self.assertEqual(manifest["source_order_violation_count"], 0)
 
     def test_cli_returns_two_when_quality_gate_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
