@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "python/pipeline/audit_d1_context_logs.py"
+      - "python/pipeline/discover_stage10d_phase1_logs.py"
       - "python/pipeline/replay_stage10d_phase1_contract.py"
       - "python/pipeline/validate_stage10d_phase1_shadow.py"
       - "python/pipeline/validate_stage10d_phase1_shadow_strict.py"
@@ -13,6 +14,7 @@ on:
       - "scripts/validate_stage10d_phase1_mt5_local.sh"
       - "tests/test_audit_d1_context_logs.py"
       - "tests/test_d1_context_contract.py"
+      - "tests/test_discover_stage10d_phase1_logs.py"
       - "tests/test_h4_d1_gate_contract.py"
       - "tests/test_replay_stage10d_phase1_contract.py"
       - "tests/test_validate_stage10d_phase1_shadow.py"
@@ -43,6 +45,7 @@ jobs:
         run: |
           python -m py_compile \
             python/pipeline/audit_d1_context_logs.py \
+            python/pipeline/discover_stage10d_phase1_logs.py \
             python/pipeline/replay_stage10d_phase1_contract.py \
             python/pipeline/validate_stage10d_phase1_shadow.py \
             python/pipeline/validate_stage10d_phase1_shadow_strict.py \
