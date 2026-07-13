@@ -6,7 +6,7 @@
 |---|---|---|
 | Stage10B | Controlled frequency pilot | Closed; not promoted |
 | Stage10C | USDJPY-first governance reset and live core baseline | Active core; unchanged by Stage10D |
-| Stage10D | Momentum continuation challenger research | Phase 1 compile/startup/replay/CI passed; first organic H4 evaluation pending |
+| Stage10D | Momentum continuation challenger research | Phase 1 CLOSED / PASS; Phase 2 awaits explicit authorization |
 
 ## Stage10C documents
 
@@ -50,7 +50,7 @@ Pilar C is absorbed into Stage10D:
 
 No separate Pilar C execution stream remains.
 
-## Current Phase 1 finding
+## Phase 1 closure finding
 
 The exact active v4.43.0 sources disproved the initial stale-cache hypothesis.
 
@@ -65,9 +65,9 @@ filtered_h4_signal
 
 Only a raw signal aligned with the discrete D1 bias can be promoted. Neutral or opposite candidates remain observable for research and are blocked before `ENTRY_READY`.
 
-The final validator also isolates the exact v4.43.1 EA marker before evaluating a mixed MT5 daily log. Events emitted by the active v4.43.0 real EA cannot satisfy or fail the shadow gate.
+The final validator isolates the exact v4.43.1 EA marker and joins rotated MT5 logs when necessary. Events emitted by the active v4.43.0 real EA cannot satisfy or fail the shadow gate.
 
-## Current phase gate
+## Final Phase 1 gate
 
 ```text
 Phase 1 diagnosis = PASS
@@ -78,10 +78,13 @@ Phase 1 shadow startup safety = PASS
 Phase 1 webhook authentication = PASS
 Phase 1 Magic/boot isolation = PASS
 Phase 1 July 8 contract replay = PASS
-Phase 1 mixed-log isolation regression = PASS (GitHub Actions)
+Phase 1 mixed-log isolation regression = PASS
+Phase 1 rotated-log discovery = PASS
 Phase 1 targeted CI = PASS
-Phase 1 first organic H4 evaluation = PENDING
-Phase 2 authorization = DENIED
+Phase 1 organic H4 evaluations = 2 PASS / 0 violations
+Phase 1 final validator = PASS_PHASE1_FORWARD_GATE
+Phase 1 status = CLOSED / PASS
+Phase 2 authorization = AWAITING EXPLICIT USER APPROVAL
 ```
 
-No Donchian implementation or strategy backtest may begin while the organic H4 forward gate remains open.
+No Donchian implementation or Phase 2 strategy work may begin until that approval is given.
