@@ -5,11 +5,14 @@ on:
     paths:
       - "python/pipeline/stage10d_phase2_data_readiness.py"
       - "python/pipeline/inventory_stage10d_phase2_datasets.py"
+      - "python/pipeline/diagnose_stage10d_phase2_inventory.py"
       - "python/research/stage10d_data_readiness.py"
       - "tests/test_stage10d_data_readiness.py"
       - "tests/test_stage10d_dataset_inventory.py"
+      - "tests/test_stage10d_inventory_diagnostics.py"
       - "docs/stage10/STAGE10D_PHASE2_*.md"
       - "docs/stage10/README.md"
+      - ".gitignore"
       - ".github/workflows/stage10d-phase2-tests.yml"
   workflow_dispatch:
 
@@ -35,9 +38,11 @@ jobs:
           python -m py_compile \
             python/research/stage10d_data_readiness.py \
             python/pipeline/stage10d_phase2_data_readiness.py \
-            python/pipeline/inventory_stage10d_phase2_datasets.py
+            python/pipeline/inventory_stage10d_phase2_datasets.py \
+            python/pipeline/diagnose_stage10d_phase2_inventory.py
 
       - name: Run Phase 2 data readiness tests
         run: |
           python -m unittest tests.test_stage10d_data_readiness -v
           python -m unittest tests.test_stage10d_dataset_inventory -v
+          python -m unittest tests.test_stage10d_inventory_diagnostics -v
