@@ -12,7 +12,7 @@ import csv
 import hashlib
 import json
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable, Mapping, Optional
 
@@ -149,56 +149,58 @@ def load_mt5_csv(path: Path, symbol: str, timeframe: str) -> tuple[dict[str, obj
     if not symbol.strip():
         raise ValueError("symbol is required")
 
-    text = path.read_text(encoding="utf-8-sig")
-    if not text.strip():
-        raise ValueError(f"CSV is empty: {path}")
-
-    delimiter = _detect_delimiter(text.splitlines()[0])
-    reader = csv.DictReader(text.splitlines(), delimiter=delimiter)
-    if reader.fieldnames is None:
-        raise ValueError("CSV header is missing")
-
-    normalized_fields = {_normalize_header(name): name for name in reader.fieldnames}
-    required_prices = ("open", "high", "low", "close")
-    missing_prices = [name for name in required_prices if name not in normalized_fields]
-    if missing_prices:
-        raise ValueError(f"Missing required columns: {', '.join(missing_prices)}")
-
-    volume_key = "tick_volume" if "tick_volume" in normalized_fields else "volume"
-    if volume_key not in normalized_fields:
-        raise ValueError("Missing required volume/tick_volume column")
-
-    has_combined_time = "time" in normalized_fields
-    has_split_time = "date" in normalized_fields and "time" in normalized_fields
-    if not has_combined_time:
-        raise ValueError("Missing time column")
-
     rows: list[dict[str, object]] = []
-    for line_number, source_row in enumerate(reader, start=2):
-        normalized = {
-            _normalize_header(key): (value or "").strip()
-            for key, value in source_row.items()
-            if key is not None
-        }
-        try:
-            if has_split_time and normalized.get("date"):
-                timestamp_text = f"{normalized['date']} {normalized['time']}"
-            else:
-                timestamp_text = normalized["time"]
-            timestamp = _parse_time(timestamp_text)
-            row = {
-                "time": timestamp,
-                "open": float(normalized["open"]),
-                "high": float(normalized["high"]),
-                "low": float(normalized["low"]),
-                "close": float(normalized["close"]),
-                "volume": float(normalized[volume_key]),
-                "symbol": symbol.upper(),
-                "timeframe": timeframe,
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        first_line = handle.readline()
+        if not first_line.strip():
+            raise ValueError(f"CSV is empty: {path}")
+
+        delimiter = _detect_delimiter(first_line)
+        handle.seek(0)
+        reader = csv.DictReader(handle, delimiter=delimiter)
+        if reader.fieldnames is None:
+            raise ValueError("CSV header is missing")
+
+        normalized_fields = {_normalize_header(name): name for name in reader.fieldnames}
+        required_prices = ("open", "high", "low", "close")
+        missing_prices = [name for name in required_prices if name not in normalized_fields]
+        if missing_prices:
+            raise ValueError(f"Missing required columns: {', '.join(missing_prices)}")
+
+        volume_key = "tick_volume" if "tick_volume" in normalized_fields else "volume"
+        if volume_key not in normalized_fields:
+            raise ValueError("Missing required volume/tick_volume column")
+
+        has_combined_time = "time" in normalized_fields
+        has_split_time = "date" in normalized_fields and "time" in normalized_fields
+        if not has_combined_time:
+            raise ValueError("Missing time column")
+
+        for line_number, source_row in enumerate(reader, start=2):
+            normalized = {
+                _normalize_header(key): (value or "").strip()
+                for key, value in source_row.items()
+                if key is not None
             }
-        except (KeyError, ValueError) as exc:
-            raise ValueError(f"Invalid row {line_number}: {exc}") from exc
-        rows.append(row)
+            try:
+                if has_split_time and normalized.get("date"):
+                    timestamp_text = f"{normalized['date']} {normalized['time']}"
+                else:
+                    timestamp_text = normalized["time"]
+                timestamp = _parse_time(timestamp_text)
+                row = {
+                    "time": timestamp,
+                    "open": float(normalized["open"]),
+                    "high": float(normalized["high"]),
+                    "low": float(normalized["low"]),
+                    "close": float(normalized["close"]),
+                    "volume": float(normalized[volume_key]),
+                    "symbol": symbol.upper(),
+                    "timeframe": timeframe,
+                }
+            except (KeyError, ValueError) as exc:
+                raise ValueError(f"Invalid row {line_number}: {exc}") from exc
+            rows.append(row)
 
     if not rows:
         raise ValueError("CSV contains no data rows")
@@ -359,7 +361,7 @@ def build_readiness_bundle(
         manifest_version=MANIFEST_VERSION,
         data_manifest_id=_manifest_id(identity),
         parser_version=PARSER_VERSION,
-        generated_at_utc=datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        generated_at_utc=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         source_file=str(path),
         source_sha256=source_hash,
         source_size_bytes=path.stat().st_size,
