@@ -6,7 +6,7 @@
 |---|---|---|
 | Stage10B | Controlled frequency pilot | Closed; not promoted |
 | Stage10C | USDJPY-first governance reset and live core baseline | Active core; unchanged by Stage10D |
-| Stage10D | Momentum continuation challenger research | Phase 1 CLOSED / PASS; Phase 2 awaits explicit authorization |
+| Stage10D | Momentum continuation challenger research | Phase 1 CLOSED / PASS; Phase 2 IN PROGRESS — data foundation only |
 
 ## Stage10C documents
 
@@ -28,6 +28,7 @@
 - `STAGE10D_PHASE1_V4431_SOURCE_MANIFEST.md`
 - `STAGE10D_PHASE1_OFFLINE_REPLAY_AND_FORWARD_GATE.md`
 - `STAGE10D_PHASE1_LOCAL_FORWARD_RUNBOOK.md`
+- `STAGE10D_PHASE2_DATA_FOUNDATION.md`
 - `../adr/ADR-016-stage10d-donchian-breakout-challenger.md`
 
 ## Program relationship
@@ -84,7 +85,17 @@ Phase 1 targeted CI = PASS
 Phase 1 organic H4 evaluations = 2 PASS / 0 violations
 Phase 1 final validator = PASS_PHASE1_FORWARD_GATE
 Phase 1 status = CLOSED / PASS
-Phase 2 authorization = AWAITING EXPLICIT USER APPROVAL
 ```
 
-No Donchian implementation or Phase 2 strategy work may begin until that approval is given.
+## Phase 2 authorization and scope
+
+```text
+Phase 2 authorization = GRANTED
+Phase 2 branch = agent/stage10d-phase2-data-readiness
+Phase 2 status = IN PROGRESS
+Phase 2 execution = OFFLINE DATA FOUNDATION ONLY
+```
+
+The first vertical slice adds canonical MT5 CSV parsing, explicit server-time metadata, source checksums, reproducible manifests, normalized output and quality gates for duplicates, OHLC, volume and continuity.
+
+Phase 2 does not authorize Donchian strategy promotion, changes to v4.43.0, changes to v4.43.1 shadow execution, Worker/Supabase production changes or real capital.
