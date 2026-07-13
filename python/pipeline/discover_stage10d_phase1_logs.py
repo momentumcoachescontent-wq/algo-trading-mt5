@@ -10,9 +10,14 @@ an evaluation-only fragment and lose the session start.
 from __future__ import annotations
 
 import argparse
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from python.pipeline.validate_stage10d_phase1_shadow import EA_MARKER, read_log
 
@@ -117,7 +122,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     try:
         paths = discover_logs(args.mt5_root)
     except FileNotFoundError as exc:
-        print(str(exc), file=__import__("sys").stderr)
+        print(str(exc), file=sys.stderr)
         return 1
 
     for path in paths:
