@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 from python.pipeline.discover_stage10d_phase1_logs import discover_logs
 from python.pipeline.validate_stage10d_phase1_shadow import EA_MARKER
+
+ROOT = Path(__file__).resolve().parents[1]
+DISCOVERY_SCRIPT = ROOT / "python" / "pipeline" / "discover_stage10d_phase1_logs.py"
 
 
 class DiscoverStage10DPhase1LogsTests(unittest.TestCase):
@@ -66,6 +71,28 @@ class DiscoverStage10DPhase1LogsTests(unittest.TestCase):
             )
 
             self.assertEqual(discover_logs(root), (log,))
+
+    def test_direct_cli_bootstraps_repository_imports(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            log = root / "Logs" / "20260713.log"
+            self.write_log(
+                log,
+                "[ENTRY_STATE_RESET] symbol=USDJPY | reason=on_init | previous_action=NONE",
+                "[D1_CONTEXT_SNAPSHOT] snapshot_match=true | raw_h4_signal=0 | filtered_h4_signal=0",
+            )
+
+            completed = subprocess.run(
+                [sys.executable, str(DISCOVERY_SCRIPT), str(root)],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(completed.stdout.strip(), str(log))
+            self.assertNotIn("ModuleNotFoundError", completed.stderr)
 
 
 if __name__ == "__main__":
