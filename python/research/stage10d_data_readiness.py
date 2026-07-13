@@ -1,7 +1,7 @@
 """Stage10D Phase 2 canonical MT5 CSV readiness contract.
 
 This module intentionally uses only the Python standard library so the data gate
-can run in CI and on the MT5 host without adding research dependencies.  It
+can run in CI and on the MT5 host without adding research dependencies. It
 preserves broker-server timestamps as naive wall-clock values; timezone metadata
 is mandatory and no silent UTC conversion is performed.
 """
@@ -48,6 +48,7 @@ class QualityReport:
     row_count: int
     unique_row_count: int
     duplicate_count: int
+    source_order_violation_count: int
     ohlc_violation_count: int
     nonpositive_volume_count: int
     expected_market_closure_gap_count: int
@@ -79,6 +80,7 @@ class DatasetManifest:
     last_bar_time: Optional[str]
     quality_status: str
     duplicate_count: int
+    source_order_violation_count: int
     ohlc_violation_count: int
     nonpositive_volume_count: int
     expected_market_closure_gap_count: int
@@ -249,9 +251,12 @@ def audit_rows(rows: Iterable[Mapping[str, object]], timeframe: str) -> QualityR
         raise ValueError("All rows must contain datetime values in 'time'")
 
     duplicate_count = len(times) - len(set(times))
+    source_order_violations = sum(
+        current < previous for previous, current in zip(times, times[1:])
+    )
     unique_by_time: dict[datetime, Mapping[str, object]] = {}
     for row in materialized:
-        unique_by_time.setdefault(row["time"], row)  # first occurrence is canonical
+        unique_by_time.setdefault(row["time"], row)
     ordered = [unique_by_time[key] for key in sorted(unique_by_time)]
 
     ohlc_violations = 0
@@ -288,6 +293,7 @@ def audit_rows(rows: Iterable[Mapping[str, object]], timeframe: str) -> QualityR
     failed = any(
         (
             duplicate_count,
+            source_order_violations,
             ohlc_violations,
             nonpositive_volume,
             counts["missing_export_segment"],
@@ -298,6 +304,7 @@ def audit_rows(rows: Iterable[Mapping[str, object]], timeframe: str) -> QualityR
         row_count=len(materialized),
         unique_row_count=len(ordered),
         duplicate_count=duplicate_count,
+        source_order_violation_count=source_order_violations,
         ohlc_violation_count=ohlc_violations,
         nonpositive_volume_count=nonpositive_volume,
         expected_market_closure_gap_count=counts["expected_market_closure"],
@@ -368,6 +375,7 @@ def build_readiness_bundle(
         last_bar_time=_canonical_time(ordered_times[-1]) if ordered_times else None,
         quality_status=quality.status,
         duplicate_count=quality.duplicate_count,
+        source_order_violation_count=quality.source_order_violation_count,
         ohlc_violation_count=quality.ohlc_violation_count,
         nonpositive_volume_count=quality.nonpositive_volume_count,
         expected_market_closure_gap_count=quality.expected_market_closure_gap_count,
