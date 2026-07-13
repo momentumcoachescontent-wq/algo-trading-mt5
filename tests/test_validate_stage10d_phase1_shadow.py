@@ -47,6 +47,26 @@ class ShadowValidatorTests(unittest.TestCase):
         summary = validate_lines(lines)
         self.assertEqual(summary.status, "FAIL")
 
+    def test_missing_snapshot_ids_fail_as_malformed(self):
+        lines = base_session() + [
+            f"{PREFIX} [D1_CONTEXT_SNAPSHOT] symbol=USDJPY | eval_time=2026.07.08 04:00 | bias_discrete=1 | h4_consumed_bias=1 | raw_h4_signal=0 | filtered_h4_signal=0 | snapshot_match=true",
+            f"{PREFIX} [EDGE_EVAL_WEBHOOK_OK] status=200",
+        ]
+        summary = validate_lines(lines)
+        self.assertEqual(summary.status, "FAIL")
+        self.assertFalse(summary.evaluation_results[0].passed)
+        self.assertIn("malformed_snapshot", summary.evaluation_results[0].violations[0])
+        self.assertIn("snapshot_id", summary.evaluation_results[0].violations[0])
+
+    def test_blank_consumed_snapshot_id_fails_as_malformed(self):
+        lines = base_session() + [
+            f"{PREFIX} [D1_CONTEXT_SNAPSHOT] symbol=USDJPY | eval_time=2026.07.08 04:00 | bias_discrete=1 | snapshot_id=a | h4_consumed_snapshot_id= | h4_consumed_bias=1 | raw_h4_signal=0 | filtered_h4_signal=0 | snapshot_match=true",
+            f"{PREFIX} [EDGE_EVAL_WEBHOOK_OK] status=200",
+        ]
+        summary = validate_lines(lines)
+        self.assertEqual(summary.status, "FAIL")
+        self.assertIn("h4_consumed_snapshot_id", summary.evaluation_results[0].violations[0])
+
     def test_wrong_magic_fails(self):
         summary = validate_lines(base_session(magic=20260527))
         self.assertEqual(summary.status, "FAIL")
