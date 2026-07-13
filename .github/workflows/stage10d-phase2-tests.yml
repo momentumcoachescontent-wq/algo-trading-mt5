@@ -7,11 +7,13 @@ on:
       - "python/pipeline/inventory_stage10d_phase2_datasets.py"
       - "python/pipeline/diagnose_stage10d_phase2_inventory.py"
       - "python/pipeline/inspect_stage10d_phase2_problem_gaps.py"
+      - "python/pipeline/inspect_stage10d_phase2_gap_sources.py"
       - "python/research/stage10d_data_readiness.py"
       - "tests/test_stage10d_data_readiness.py"
       - "tests/test_stage10d_dataset_inventory.py"
       - "tests/test_stage10d_inventory_diagnostics.py"
       - "tests/test_stage10d_problem_gap_inspection.py"
+      - "tests/test_stage10d_gap_source_inspection.py"
       - "docs/stage10/STAGE10D_PHASE2_*.md"
       - "docs/stage10/README.md"
       - ".gitignore"
@@ -42,7 +44,8 @@ jobs:
             python/pipeline/stage10d_phase2_data_readiness.py \
             python/pipeline/inventory_stage10d_phase2_datasets.py \
             python/pipeline/diagnose_stage10d_phase2_inventory.py \
-            python/pipeline/inspect_stage10d_phase2_problem_gaps.py
+            python/pipeline/inspect_stage10d_phase2_problem_gaps.py \
+            python/pipeline/inspect_stage10d_phase2_gap_sources.py
 
       - name: Run Phase 2 data readiness tests
         run: |
@@ -50,3 +53,4 @@ jobs:
           python -m unittest tests.test_stage10d_dataset_inventory -v
           python -m unittest tests.test_stage10d_inventory_diagnostics -v
           python -m unittest tests.test_stage10d_problem_gap_inspection -v
+          python -m unittest tests.test_stage10d_gap_source_inspection -v
