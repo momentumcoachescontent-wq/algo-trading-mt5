@@ -6,7 +6,7 @@
 |---|---|---|
 | Stage10B | Controlled frequency pilot | Closed; not promoted |
 | Stage10C | USDJPY-first governance reset and live core baseline | Active core; unchanged by Stage10D |
-| Stage10D | Momentum continuation challenger research | Phase 0 closed; Phase 1 pending review |
+| Stage10D | Momentum continuation challenger research | Phase 1 CLOSED / PASS; Phase 2 awaits explicit authorization |
 
 ## Stage10C documents
 
@@ -20,10 +20,14 @@
 - `STAGE10C_TOUCH_GAP_INSTRUMENTATION.md`
 - `STAGE10C_WORKER_POLICY_DESIGN.md`
 
-## Stage10D foundation documents
+## Stage10D documents
 
 - `STAGE10D_PROGRAM_CHARTER.md`
 - `STAGE10D_PHASE0_FOUNDATION_AND_READINESS.md`
+- `STAGE10D_PHASE1_D1_CONTEXT_CLOSURE.md`
+- `STAGE10D_PHASE1_V4431_SOURCE_MANIFEST.md`
+- `STAGE10D_PHASE1_OFFLINE_REPLAY_AND_FORWARD_GATE.md`
+- `STAGE10D_PHASE1_LOCAL_FORWARD_RUNBOOK.md`
 - `../adr/ADR-016-stage10d-donchian-breakout-challenger.md`
 
 ## Program relationship
@@ -46,8 +50,41 @@ Pilar C is absorbed into Stage10D:
 
 No separate Pilar C execution stream remains.
 
-## Current phase gate
+## Phase 1 closure finding
 
-Phase 0 is closed.
+The exact active v4.43.0 sources disproved the initial stale-cache hypothesis.
 
-The next permitted activity is Stage10D Phase 1 — D1 Context Closure. No Donchian implementation or strategy backtest may begin before Phase 1 is reviewed and closed.
+`CH4Signal::Evaluate()` generated the H4 BUY/SELL pattern independently of `bias_d1`; the bias only selected a diagnostic fail reason when no pattern existed. Therefore a raw candidate could be generated while D1 was neutral or opposite.
+
+The v4.43.1 candidate now separates:
+
+```text
+raw_h4_signal
+filtered_h4_signal
+```
+
+Only a raw signal aligned with the discrete D1 bias can be promoted. Neutral or opposite candidates remain observable for research and are blocked before `ENTRY_READY`.
+
+The final validator isolates the exact v4.43.1 EA marker and joins rotated MT5 logs when necessary. Events emitted by the active v4.43.0 real EA cannot satisfy or fail the shadow gate.
+
+## Final Phase 1 gate
+
+```text
+Phase 1 diagnosis = PASS
+Phase 1 implementation = PASS
+Phase 1 static/validator tests = PASS
+Phase 1 MetaEditor compile = PASS
+Phase 1 shadow startup safety = PASS
+Phase 1 webhook authentication = PASS
+Phase 1 Magic/boot isolation = PASS
+Phase 1 July 8 contract replay = PASS
+Phase 1 mixed-log isolation regression = PASS
+Phase 1 rotated-log discovery = PASS
+Phase 1 targeted CI = PASS
+Phase 1 organic H4 evaluations = 2 PASS / 0 violations
+Phase 1 final validator = PASS_PHASE1_FORWARD_GATE
+Phase 1 status = CLOSED / PASS
+Phase 2 authorization = AWAITING EXPLICIT USER APPROVAL
+```
+
+No Donchian implementation or Phase 2 strategy work may begin until that approval is given.

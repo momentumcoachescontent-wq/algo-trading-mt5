@@ -1,0 +1,64 @@
+name: Stage10D Phase 1 Tests
+
+on:
+  pull_request:
+    paths:
+      - "python/pipeline/audit_d1_context_logs.py"
+      - "python/pipeline/discover_stage10d_phase1_logs.py"
+      - "python/pipeline/replay_stage10d_phase1_contract.py"
+      - "python/pipeline/validate_stage10d_phase1_shadow.py"
+      - "python/pipeline/validate_stage10d_phase1_shadow_strict.py"
+      - "python/research/d1_context_contract.py"
+      - "python/research/h4_d1_gate_contract.py"
+      - "scripts/validate_stage10d_phase1_forward.sh"
+      - "scripts/validate_stage10d_phase1_mt5_local.sh"
+      - "tests/test_audit_d1_context_logs.py"
+      - "tests/test_d1_context_contract.py"
+      - "tests/test_discover_stage10d_phase1_logs.py"
+      - "tests/test_h4_d1_gate_contract.py"
+      - "tests/test_replay_stage10d_phase1_contract.py"
+      - "tests/test_validate_stage10d_phase1_shadow.py"
+      - "tests/test_validate_stage10d_phase1_shadow_strict.py"
+      - "docs/stage10/README.md"
+      - "docs/stage10/STAGE10D_PHASE1_*.md"
+      - ".github/workflows/stage10d-phase1-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  phase1-contract-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compile Phase 1 Python modules
+        run: |
+          python -m py_compile \
+            python/pipeline/audit_d1_context_logs.py \
+            python/pipeline/discover_stage10d_phase1_logs.py \
+            python/pipeline/replay_stage10d_phase1_contract.py \
+            python/pipeline/validate_stage10d_phase1_shadow.py \
+            python/pipeline/validate_stage10d_phase1_shadow_strict.py \
+            python/research/d1_context_contract.py \
+            python/research/h4_d1_gate_contract.py
+
+      - name: Validate Phase 1 Bash syntax
+        run: |
+          bash -n scripts/validate_stage10d_phase1_forward.sh
+          bash -n scripts/validate_stage10d_phase1_mt5_local.sh
+
+      - name: D1 and H4 contract tests
+        run: python -m unittest discover -s tests -p "test_*d1*.py" -v
+
+      - name: Phase 1 replay and validator tests
+        run: python -m unittest discover -s tests -p "test_*stage10d_phase1*.py" -v
