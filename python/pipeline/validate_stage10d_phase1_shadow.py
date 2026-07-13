@@ -202,6 +202,18 @@ def validate_lines(lines: Iterable[str], expected_magic: int = 20260711) -> Vali
             filtered = int(fields["filtered_h4_signal"])
             snapshot_match = as_bool(fields["snapshot_match"])
             consumed_bias = int(fields["h4_consumed_bias"])
+            snapshot_id = fields["snapshot_id"].strip()
+            consumed_snapshot_id = fields["h4_consumed_snapshot_id"].strip()
+            missing_identity = [
+                name
+                for name, value in (
+                    ("snapshot_id", snapshot_id),
+                    ("h4_consumed_snapshot_id", consumed_snapshot_id),
+                )
+                if not value
+            ]
+            if missing_identity:
+                raise ValueError("missing_snapshot_identity:" + ",".join(missing_identity))
         except (KeyError, ValueError) as exc:
             eval_results.append(
                 EvaluationResult(
@@ -218,7 +230,7 @@ def validate_lines(lines: Iterable[str], expected_magic: int = 20260711) -> Vali
 
         if not snapshot_match:
             violations.append("snapshot_match_false")
-        if fields.get("snapshot_id") != fields.get("h4_consumed_snapshot_id"):
+        if snapshot_id != consumed_snapshot_id:
             violations.append("snapshot_id_mismatch")
         if consumed_bias != bias:
             violations.append("consumed_bias_mismatch")
