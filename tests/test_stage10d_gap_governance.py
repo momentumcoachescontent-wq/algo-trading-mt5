@@ -31,6 +31,7 @@ class Stage10DGapGovernanceTests(unittest.TestCase):
 
     def policy(self, classification: str, previous: str, current: str):
         return {
+            "policy_version": "stage10d-gap-governance-v1",
             "symbol": "USDJPY",
             "rules": [
                 {
@@ -43,6 +44,18 @@ class Stage10DGapGovernanceTests(unittest.TestCase):
                     "rationale": "test",
                 }
             ],
+        }
+
+    def feed_profile(self, *, policy_version: str = "stage10d-gap-governance-v1"):
+        return {
+            "profile_version": "stage10d-feed-profile-v1",
+            "symbol": "USDJPY",
+            "broker_company": "MetaQuotes Ltd.",
+            "account_server": "MetaQuotes-Demo",
+            "calendar_confirmation": {
+                "mode": "PROMOTE_EXACT_ENUMERATED_PENDING_RULES",
+                "allowed_policy_versions": [policy_version],
+            },
         }
 
     def test_governed_gap_passes_with_exclusions(self):
@@ -61,7 +74,7 @@ class Stage10DGapGovernanceTests(unittest.TestCase):
         self.assertEqual(report.governed_gap_count, 1)
         self.assertEqual(report.governed_gaps[0].missing_bar_times, ("2026-07-06 08:00:00",))
 
-    def test_pending_calendar_blocks_final_manifest(self):
+    def test_pending_calendar_blocks_final_manifest_without_profile(self):
         missing = {datetime(2026, 7, 6, 8, 0)}
         report = evaluate_gap_governance(
             self.rows(missing=missing),
@@ -75,14 +88,57 @@ class Stage10DGapGovernanceTests(unittest.TestCase):
         )
         self.assertEqual(report.status, "PENDING_BROKER_CALENDAR")
         self.assertEqual(report.pending_calendar_gap_count, 1)
+        self.assertEqual(report.confirmed_session_gap_count, 0)
 
-    def test_unmatched_gap_fails(self):
+    def test_matching_feed_profile_promotes_exact_pending_rule(self):
         missing = {datetime(2026, 7, 6, 8, 0)}
         report = evaluate_gap_governance(
             self.rows(missing=missing),
             symbol="USDJPY",
             timeframe="H4",
-            policy={"symbol": "USDJPY", "rules": []},
+            policy=self.policy(
+                "PENDING_BROKER_CALENDAR_CONFIRMATION",
+                "2026-07-06 04:00:00",
+                "2026-07-06 12:00:00",
+            ),
+            feed_profile=self.feed_profile(),
+        )
+        self.assertEqual(report.status, "PASS_WITH_CONFIRMED_SESSION_CLOSURES")
+        self.assertEqual(report.pending_calendar_gap_count, 0)
+        self.assertEqual(report.confirmed_session_gap_count, 1)
+        self.assertEqual(
+            report.confirmed_session_gaps[0].action,
+            "ALLOW_EXACT_SESSION_GAP_NO_SYNTHETIC_BARS",
+        )
+
+    def test_feed_profile_does_not_promote_unmatched_policy_version(self):
+        missing = {datetime(2026, 7, 6, 8, 0)}
+        report = evaluate_gap_governance(
+            self.rows(missing=missing),
+            symbol="USDJPY",
+            timeframe="H4",
+            policy=self.policy(
+                "PENDING_BROKER_CALENDAR_CONFIRMATION",
+                "2026-07-06 04:00:00",
+                "2026-07-06 12:00:00",
+            ),
+            feed_profile=self.feed_profile(policy_version="some-other-policy"),
+        )
+        self.assertEqual(report.status, "PENDING_BROKER_CALENDAR")
+        self.assertEqual(report.pending_calendar_gap_count, 1)
+
+    def test_unmatched_gap_fails_even_with_feed_profile(self):
+        missing = {datetime(2026, 7, 6, 8, 0)}
+        report = evaluate_gap_governance(
+            self.rows(missing=missing),
+            symbol="USDJPY",
+            timeframe="H4",
+            policy={
+                "policy_version": "stage10d-gap-governance-v1",
+                "symbol": "USDJPY",
+                "rules": [],
+            },
+            feed_profile=self.feed_profile(),
         )
         self.assertEqual(report.status, "FAIL_UNGOVERNED_GAPS")
         self.assertEqual(report.unmatched_gap_count, 1)
@@ -92,7 +148,12 @@ class Stage10DGapGovernanceTests(unittest.TestCase):
             self.rows(duplicate=True),
             symbol="USDJPY",
             timeframe="H4",
-            policy={"symbol": "USDJPY", "rules": []},
+            policy={
+                "policy_version": "stage10d-gap-governance-v1",
+                "symbol": "USDJPY",
+                "rules": [],
+            },
+            feed_profile=self.feed_profile(),
         )
         self.assertEqual(report.status, "FAIL_STRUCTURAL")
         self.assertGreater(report.structural_violation_count, 0)
