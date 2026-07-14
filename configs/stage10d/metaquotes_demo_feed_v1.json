@@ -1,0 +1,24 @@
+{
+  "profile_version": "stage10d-feed-profile-v1",
+  "symbol": "USDJPY",
+  "broker_company": "MetaQuotes Ltd.",
+  "account_server": "MetaQuotes-Demo",
+  "terminal_environment": "mt5-macos-wine",
+  "server_time_observation": {
+    "observed_at_utc": "2026-07-14T01:00:29Z",
+    "server_time": "2026-07-14 04:00:29",
+    "utc_time": "2026-07-14 01:00:29",
+    "offset_seconds": 10800,
+    "offset": "UTC+03:00"
+  },
+  "historical_offset_policy": "Do not infer a fixed historical UTC offset or DST schedule. Preserve source timestamps as MetaQuotes-Demo broker-server wall-clock values.",
+  "calendar_confirmation": {
+    "mode": "PROMOTE_EXACT_ENUMERATED_PENDING_RULES",
+    "allowed_policy_versions": [
+      "stage10d-gap-governance-v1"
+    ],
+    "scope": "Only exact H4/D1 intervals already enumerated in the allowed policy are promoted. New, unmatched or structurally invalid gaps remain blocking.",
+    "confirmed_classification": "CONFIRMED_SOURCE_SESSION_CLOSURE",
+    "confirmed_action": "ALLOW_EXACT_SESSION_GAP_NO_SYNTHETIC_BARS"
+  }
+}
