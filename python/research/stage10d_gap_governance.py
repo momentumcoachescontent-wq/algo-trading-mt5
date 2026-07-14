@@ -30,9 +30,11 @@ class GapGovernanceReport:
     raw_quality_status: str
     status: str
     structural_violation_count: int
+    confirmed_session_gap_count: int
     governed_gap_count: int
     pending_calendar_gap_count: int
     unmatched_gap_count: int
+    confirmed_session_gaps: tuple[GovernedGapDecision, ...]
     governed_gaps: tuple[GovernedGapDecision, ...]
     pending_calendar_gaps: tuple[GovernedGapDecision, ...]
     unmatched_gaps: tuple[dict[str, object], ...]
@@ -109,6 +111,7 @@ def evaluate_gap_governance(
             raise ValueError(f"Duplicate gap policy rule for {key}")
         rules_by_key[key] = rule
 
+    confirmed_session: list[GovernedGapDecision] = []
     governed: list[GovernedGapDecision] = []
     pending: list[GovernedGapDecision] = []
     unmatched: list[dict[str, object]] = []
@@ -136,7 +139,9 @@ def evaluate_gap_governance(
             ),
             rationale=str(rule.get("rationale", "")),
         )
-        if decision.classification == "GOVERNED_DATA_GAP":
+        if decision.classification == "CONFIRMED_SOURCE_SESSION_CLOSURE":
+            confirmed_session.append(decision)
+        elif decision.classification == "GOVERNED_DATA_GAP":
             governed.append(decision)
         elif decision.classification == "PENDING_BROKER_CALENDAR_CONFIRMATION":
             pending.append(decision)
@@ -149,8 +154,12 @@ def evaluate_gap_governance(
         status = "FAIL_UNGOVERNED_GAPS"
     elif pending:
         status = "PENDING_BROKER_CALENDAR"
+    elif governed and confirmed_session:
+        status = "PASS_WITH_SESSION_CLOSURES_AND_GOVERNED_EXCLUSIONS"
     elif governed:
         status = "PASS_WITH_GOVERNED_EXCLUSIONS"
+    elif confirmed_session:
+        status = "PASS_WITH_CONFIRMED_SESSION_CLOSURES"
     else:
         status = "PASS"
 
@@ -160,9 +169,11 @@ def evaluate_gap_governance(
         raw_quality_status=quality.status,
         status=status,
         structural_violation_count=structural_violation_count,
+        confirmed_session_gap_count=len(confirmed_session),
         governed_gap_count=len(governed),
         pending_calendar_gap_count=len(pending),
         unmatched_gap_count=len(unmatched),
+        confirmed_session_gaps=tuple(confirmed_session),
         governed_gaps=tuple(governed),
         pending_calendar_gaps=tuple(pending),
         unmatched_gaps=tuple(unmatched),
