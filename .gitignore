@@ -30,6 +30,7 @@ dist-ssr
 .env*
 !.env.example
 data/
+exports/
 **/__pycache__/
 *.pyc
 *.pyo

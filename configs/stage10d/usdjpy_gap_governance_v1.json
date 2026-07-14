@@ -1,0 +1,160 @@
+{
+  "policy_version": "stage10d-gap-governance-v1",
+  "symbol": "USDJPY",
+  "timestamp_semantics": "broker-server wall-clock; timezone not yet verified",
+  "rules": [
+    {
+      "rule_id": "H4-2020-XMAS",
+      "timeframe": "H4",
+      "previous_time": "2020-12-24 20:00:00",
+      "current_time": "2020-12-28 00:00:00",
+      "classification": "PENDING_BROKER_CALENDAR_CONFIRMATION",
+      "action": "BLOCK_FINAL_MANIFEST",
+      "rationale": "Holiday-adjacent closure candidate; broker calendar and server timezone remain unverified."
+    },
+    {
+      "rule_id": "H4-2020-NYE",
+      "timeframe": "H4",
+      "previous_time": "2020-12-31 20:00:00",
+      "current_time": "2021-01-04 00:00:00",
+      "classification": "PENDING_BROKER_CALENDAR_CONFIRMATION",
+      "action": "BLOCK_FINAL_MANIFEST",
+      "rationale": "Holiday-adjacent closure candidate; broker calendar and server timezone remain unverified."
+    },
+    {
+      "rule_id": "H4-2022-XMAS",
+      "timeframe": "H4",
+      "previous_time": "2022-12-23 20:00:00",
+      "current_time": "2022-12-26 08:00:00",
+      "classification": "PENDING_BROKER_CALENDAR_CONFIRMATION",
+      "action": "BLOCK_FINAL_MANIFEST",
+      "rationale": "Holiday-adjacent closure candidate; broker calendar and server timezone remain unverified."
+    },
+    {
+      "rule_id": "H4-2022-NYE",
+      "timeframe": "H4",
+      "previous_time": "2022-12-30 20:00:00",
+      "current_time": "2023-01-02 04:00:00",
+      "classification": "PENDING_BROKER_CALENDAR_CONFIRMATION",
+      "action": "BLOCK_FINAL_MANIFEST",
+      "rationale": "Holiday-adjacent closure candidate; broker calendar and server timezone remain unverified."
+    },
+    {
+      "rule_id": "H4-2023-XMAS",
+      "timeframe": "H4",
+      "previous_time": "2023-12-25 00:00:00",
+      "current_time": "2023-12-26 00:00:00",
+      "classification": "PENDING_BROKER_CALENDAR_CONFIRMATION",
+      "action": "BLOCK_FINAL_MANIFEST",
+      "rationale": "Holiday-adjacent closure candidate; broker calendar and server timezone remain unverified."
+    },
+    {
+      "rule_id": "H4-2023-NYE",
+      "timeframe": "H4",
+      "previous_time": "2023-12-29 20:00:00",
+      "current_time": "2024-01-02 00:00:00",
+      "classification": "PENDING_BROKER_CALENDAR_CONFIRMATION",
+      "action": "BLOCK_FINAL_MANIFEST",
+      "rationale": "Holiday-adjacent closure candidate; broker calendar and server timezone remain unverified."
+    },
+    {
+      "rule_id": "H4-2024-JULY",
+      "timeframe": "H4",
+      "previous_time": "2024-07-02 12:00:00",
+      "current_time": "2024-07-03 00:00:00",
+      "classification": "GOVERNED_DATA_GAP",
+      "action": "EXCLUDE_WINDOWS_CROSSING_GAP",
+      "rationale": "Two bars are absent from the primary export and all four parseable alternate local sources. No interpolation or synthetic reconstruction is allowed."
+    },
+    {
+      "rule_id": "H4-2024-XMAS",
+      "timeframe": "H4",
+      "previous_time": "2024-12-25 00:00:00",
+      "current_time": "2024-12-26 00:00:00",
+      "classification": "PENDING_BROKER_CALENDAR_CONFIRMATION",
+      "action": "BLOCK_FINAL_MANIFEST",
+      "rationale": "Holiday-adjacent closure candidate; broker calendar and server timezone remain unverified."
+    },
+    {
+      "rule_id": "H4-2025-NYD",
+      "timeframe": "H4",
+      "previous_time": "2025-01-01 00:00:00",
+      "current_time": "2025-01-02 00:00:00",
+      "classification": "PENDING_BROKER_CALENDAR_CONFIRMATION",
+      "action": "BLOCK_FINAL_MANIFEST",
+      "rationale": "Holiday-adjacent closure candidate; broker calendar and server timezone remain unverified."
+    },
+    {
+      "rule_id": "H4-2025-JULY",
+      "timeframe": "H4",
+      "previous_time": "2025-07-03 00:00:00",
+      "current_time": "2025-07-03 12:00:00",
+      "classification": "GOVERNED_DATA_GAP",
+      "action": "EXCLUDE_WINDOWS_CROSSING_GAP",
+      "rationale": "Two bars are absent from the primary export and all four parseable alternate local sources. No interpolation or synthetic reconstruction is allowed."
+    },
+    {
+      "rule_id": "H4-2025-XMAS",
+      "timeframe": "H4",
+      "previous_time": "2025-12-24 20:00:00",
+      "current_time": "2025-12-26 00:00:00",
+      "classification": "PENDING_BROKER_CALENDAR_CONFIRMATION",
+      "action": "BLOCK_FINAL_MANIFEST",
+      "rationale": "Holiday-adjacent closure candidate; broker calendar and server timezone remain unverified."
+    },
+    {
+      "rule_id": "H4-2025-NYE",
+      "timeframe": "H4",
+      "previous_time": "2025-12-31 20:00:00",
+      "current_time": "2026-01-02 00:00:00",
+      "classification": "PENDING_BROKER_CALENDAR_CONFIRMATION",
+      "action": "BLOCK_FINAL_MANIFEST",
+      "rationale": "Holiday-adjacent closure candidate; broker calendar and server timezone remain unverified."
+    },
+    {
+      "rule_id": "D1-2020-XMAS",
+      "timeframe": "D1",
+      "previous_time": "2020-12-24 00:00:00",
+      "current_time": "2020-12-28 00:00:00",
+      "classification": "PENDING_BROKER_CALENDAR_CONFIRMATION",
+      "action": "BLOCK_FINAL_MANIFEST",
+      "rationale": "Holiday-adjacent closure candidate; broker calendar and server timezone remain unverified."
+    },
+    {
+      "rule_id": "D1-2020-NYE",
+      "timeframe": "D1",
+      "previous_time": "2020-12-31 00:00:00",
+      "current_time": "2021-01-04 00:00:00",
+      "classification": "PENDING_BROKER_CALENDAR_CONFIRMATION",
+      "action": "BLOCK_FINAL_MANIFEST",
+      "rationale": "Holiday-adjacent closure candidate; broker calendar and server timezone remain unverified."
+    },
+    {
+      "rule_id": "D1-2023-NYE",
+      "timeframe": "D1",
+      "previous_time": "2023-12-29 00:00:00",
+      "current_time": "2024-01-02 00:00:00",
+      "classification": "PENDING_BROKER_CALENDAR_CONFIRMATION",
+      "action": "BLOCK_FINAL_MANIFEST",
+      "rationale": "Holiday-adjacent closure candidate; broker calendar and server timezone remain unverified."
+    },
+    {
+      "rule_id": "D1-2025-XMAS",
+      "timeframe": "D1",
+      "previous_time": "2025-12-24 00:00:00",
+      "current_time": "2025-12-26 00:00:00",
+      "classification": "PENDING_BROKER_CALENDAR_CONFIRMATION",
+      "action": "BLOCK_FINAL_MANIFEST",
+      "rationale": "Holiday-adjacent closure candidate; broker calendar and server timezone remain unverified."
+    },
+    {
+      "rule_id": "D1-2025-NYE",
+      "timeframe": "D1",
+      "previous_time": "2025-12-31 00:00:00",
+      "current_time": "2026-01-02 00:00:00",
+      "classification": "PENDING_BROKER_CALENDAR_CONFIRMATION",
+      "action": "BLOCK_FINAL_MANIFEST",
+      "rationale": "Holiday-adjacent closure candidate; broker calendar and server timezone remain unverified."
+    }
+  ]
+}
