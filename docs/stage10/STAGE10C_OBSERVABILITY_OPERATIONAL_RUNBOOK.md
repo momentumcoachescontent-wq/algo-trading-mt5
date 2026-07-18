@@ -2,7 +2,7 @@
 
 ## Status
 
-**CODE VALIDATED — MIGRATION CHECKPOINT NOT YET EXECUTED**
+**CHECKPOINT A READY — NOT YET EXECUTED**
 
 This runbook applies and validates Supabase migration `006_stage10c_observability.sql` before Worker v3.3.0 is deployed.
 
@@ -33,11 +33,11 @@ Migration `006` is transactional, idempotent, and uses bounded lock and statemen
 
 ```text
 branch = agent/stage10c-observability-repair
-minimum head = 5ad05ed
+minimum head = 40072ec
 worktree = clean
 ```
 
-Use the latest remote head because this runbook and validation files may add later commits without changing migration semantics.
+Use the latest remote head because later documentation-only commits may not change migration semantics.
 
 ## Files
 
@@ -53,17 +53,19 @@ Use the production Supabase project SQL Editor that already owns `public.signal_
 
 Do not paste service-role keys, database passwords, or connection strings into logs or chat.
 
-### Optional macOS clipboard helper
+### macOS clipboard helper
 
-From the repository root:
+From the repository root, run one command at a time immediately before pasting into Supabase SQL Editor:
 
 ```bash
 pbcopy < infra/supabase/validation/006_stage10c_observability_preflight.sql
+
 pbcopy < infra/supabase/migrations/006_stage10c_observability.sql
+
 pbcopy < infra/supabase/validation/006_stage10c_observability_validation.sql
 ```
 
-Run one file at a time. Do not concatenate them.
+Do not concatenate the files.
 
 ## Checkpoint A1 — Preflight
 
