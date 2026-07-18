@@ -85,15 +85,39 @@ SET
         raw_payload #>> '{execution_scope,policy_name}',
         raw_payload ->> 'policy_name'
     ),
-    strategy_variant = COALESCE(strategy_variant, raw_payload ->> 'strategy_variant'),
+    strategy_variant = COALESCE(
+        strategy_variant,
+        raw_payload ->> 'strategy_variant',
+        phase
+    ),
     guard_version = COALESCE(guard_version, raw_payload ->> 'guard_version'),
+    magic_number = COALESCE(
+        magic_number,
+        CASE
+            WHEN COALESCE(raw_payload ->> 'magic_number', raw_payload ->> 'magic', '')
+                 ~ '^\d+$'
+            THEN COALESCE(
+                raw_payload ->> 'magic_number',
+                raw_payload ->> 'magic'
+            )::BIGINT
+            ELSE NULL
+        END
+    ),
     boot_id = COALESCE(boot_id, raw_payload ->> 'boot_id'),
     bar_h4 = COALESCE(
         bar_h4,
         CASE
-            WHEN COALESCE(raw_payload ->> 'bar_h4', '')
-                 ~ '^\d{4}-\d{2}-\d{2}'
-            THEN (raw_payload ->> 'bar_h4')::TIMESTAMPTZ
+            WHEN COALESCE(
+                raw_payload ->> 'bar_h4',
+                raw_payload ->> 'bar_time_h4',
+                raw_payload ->> 'bar_time',
+                ''
+            ) ~ '^\d{4}-\d{2}-\d{2}'
+            THEN COALESCE(
+                raw_payload ->> 'bar_h4',
+                raw_payload ->> 'bar_time_h4',
+                raw_payload ->> 'bar_time'
+            )::TIMESTAMPTZ
             ELSE NULL
         END
     )
@@ -169,27 +193,66 @@ WHERE decision IS NULL
        )
    );
 
--- Stable legacy correlation IDs allow future trade payloads to point to old
--- signal rows without asserting a database foreign key over incomplete data.
+-- Stable legacy IDs allow exact historical joins without imposing a foreign
+-- key over incomplete evidence. Future Worker rows use their own deterministic
+-- v1 ID contract consistently across signal_eval and trade_open payloads.
 UPDATE public.signal_evals
 SET signal_eval_id = 'stage10c-sig-legacy-' || MD5(
     COALESCE(symbol, '') || '|' ||
     COALESCE(ea_version, '') || '|' ||
-    COALESCE(strategy_variant, '') || '|' ||
-    COALESCE(bar_h4::TEXT, eval_time::TEXT, '') || '|' ||
+    COALESCE(strategy_variant, phase, '') || '|' ||
+    COALESCE(eval_time::TEXT, bar_h4::TEXT, '') || '|' ||
     COALESCE(direction, '') || '|' ||
     COALESCE(entry_price::TEXT, '')
 )
 WHERE signal_eval_id IS NULL;
 
--- Event-specific ticket backfill. Do not copy ticket into position_id.
+-- Recover only unique historical signal -> open-position matches. The join is
+-- intentionally exact and does not manufacture an order ticket.
+WITH candidate_links AS (
+    SELECT
+        t.id AS trade_id,
+        MIN(s.signal_eval_id) AS signal_eval_id,
+        COUNT(*) AS match_count
+    FROM public.trades t
+    JOIN public.signal_evals s
+      ON s.symbol = t.symbol
+     AND s.ea_version = t.ea_version
+     AND LOWER(COALESCE(s.direction, '')) = LOWER(COALESCE(t.direction, ''))
+     AND s.eval_time = t.open_time
+     AND s.entry_price IS NOT NULL
+     AND t.open_price IS NOT NULL
+     AND ABS(s.entry_price - t.open_price) <= 0.00001
+     AND (
+          UPPER(COALESCE(s.action, '')) IN ('ENTRY_READY', 'ENTRY_ACCEPTED')
+          OR COALESCE(s.would_have_traded, FALSE) = TRUE
+          OR s.decision IN ('ENTRY_READY', 'ENTRY_READY_REAL_ALLOWED')
+     )
+    WHERE t.event_type = 'open'
+      AND t.signal_eval_id IS NULL
+    GROUP BY t.id
+    HAVING COUNT(*) = 1
+)
+UPDATE public.trades t
+SET signal_eval_id = c.signal_eval_id
+FROM candidate_links c
+WHERE t.id = c.trade_id;
+
+-- The v4.43.0 payload proves that trade_open.ticket may equal position_id.
+-- Therefore migration 006 never backfills order_ticket or deal_ticket from the
+-- ambiguous legacy ticket column. Explicit IDs may be recovered only from
+-- raw_payload fields when present.
 UPDATE public.trades
-SET order_ticket = ticket
-WHERE order_ticket IS NULL AND event_type = 'open';
+SET order_ticket = (raw_payload ->> 'order_ticket')::BIGINT
+WHERE order_ticket IS NULL
+  AND raw_payload IS NOT NULL
+  AND COALESCE(raw_payload ->> 'order_ticket', '') ~ '^\d+$';
 
 UPDATE public.trades
-SET deal_ticket = ticket
-WHERE deal_ticket IS NULL AND event_type = 'close';
+SET deal_ticket = (raw_payload ->> 'deal_ticket')::BIGINT
+WHERE deal_ticket IS NULL
+  AND raw_payload IS NOT NULL
+  AND COALESCE(raw_payload ->> 'deal_ticket', '') ~ '^\d+$';
 
 -- Exact known Stage10C control backfill only. Other historical rows remain NULL
 -- rather than receiving an inferred execution mode.
@@ -200,13 +263,34 @@ WHERE execution_mode IS NULL
   AND ea_version = 'v4.43.0';
 
 UPDATE public.trades
+SET strategy_variant = COALESCE(strategy_variant, phase)
+WHERE strategy_variant IS NULL;
+
+UPDATE public.trades
 SET link_status = CASE
+    WHEN event_type = 'open'
+         AND signal_eval_id IS NOT NULL
+         AND position_id IS NOT NULL
+         AND order_ticket IS NOT NULL
+        THEN 'LEGACY_LINKED_SIGNAL_ORDER_POSITION'
+    WHEN event_type = 'open'
+         AND signal_eval_id IS NOT NULL
+         AND position_id IS NOT NULL
+        THEN 'LEGACY_LINKED_SIGNAL_POSITION_ORDER_UNKNOWN'
+    WHEN event_type = 'open'
+         AND position_id IS NOT NULL
+         AND ticket = position_id
+        THEN 'LEGACY_POSITION_TICKET_ORDER_UNKNOWN'
     WHEN event_type = 'open' AND position_id IS NOT NULL
         THEN 'LEGACY_POSITION_ONLY_NO_SIGNAL_LINK'
     WHEN event_type = 'open'
         THEN 'LEGACY_OPEN_IDENTITY_INCOMPLETE'
+    WHEN event_type = 'close'
+         AND position_id IS NOT NULL
+         AND deal_ticket IS NOT NULL
+        THEN 'LEGACY_CLOSE_POSITION_AND_DEAL'
     WHEN event_type = 'close' AND position_id IS NOT NULL
-        THEN 'LEGACY_CLOSE_POSITION_ONLY'
+        THEN 'LEGACY_CLOSE_POSITION_DEAL_UNKNOWN'
     ELSE 'LEGACY_UNLINKED'
 END
 WHERE link_status IS NULL;
@@ -232,6 +316,10 @@ CREATE INDEX IF NOT EXISTS idx_trades_open_link_identity
 
 COMMENT ON COLUMN public.signal_evals.decision IS
     'Normalized semantic decision; valid shadow entries are not ERROR.';
+COMMENT ON COLUMN public.trades.order_ticket IS
+    'Explicit MT5 order ticket only; never inferred from legacy trade_open.ticket when position_id exists.';
+COMMENT ON COLUMN public.trades.deal_ticket IS
+    'Explicit MT5 deal ticket only; ambiguous legacy ticket values remain unclassified.';
 COMMENT ON COLUMN public.trades.link_status IS
     'Explicit signal/order/position linking quality; never implies missing links.';
 
