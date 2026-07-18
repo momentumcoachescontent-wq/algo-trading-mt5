@@ -72,7 +72,8 @@ class Stage10CObservabilityContractTests(unittest.TestCase):
 
     def test_shadow_entry_error_is_repaired(self) -> None:
         self.assertIn("ENTRY_READY_SHADOW_ONLY_BLOCKED", self.sql)
-        self.assertIn("UPPER(decision) = 'ERROR'", self.sql)
+        self.assertIn("UPPER(decision) IN ('ERROR', 'SIGNAL', 'BLOCKED')", self.sql)
+        self.assertIn("UPPER(COALESCE(action, '')) LIKE 'ENTRY_READY%'", self.sql)
         self.assertIn("would_have_traded", self.sql)
 
     def test_worker_persists_separate_reasons_and_identities(self) -> None:
