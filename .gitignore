@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Local generated test artifacts
+infra/worker/.tmp-test/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
