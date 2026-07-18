@@ -7,7 +7,6 @@ BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '30s';
 
--- signal_evals is the authoritative decision ledger.
 ALTER TABLE public.signal_evals
     ADD COLUMN IF NOT EXISTS signal_eval_id TEXT,
     ADD COLUMN IF NOT EXISTS decision TEXT,
@@ -26,8 +25,6 @@ ALTER TABLE public.signal_evals
     ADD COLUMN IF NOT EXISTS bar_h4 TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS raw_payload JSONB;
 
--- Preserve legacy trade columns required by the current Worker, then add the
--- normalized identity and observability fields.
 ALTER TABLE public.trades
     ADD COLUMN IF NOT EXISTS position_id BIGINT,
     ADD COLUMN IF NOT EXISTS open_time TIMESTAMPTZ,
@@ -45,8 +42,7 @@ ALTER TABLE public.trades
     ADD COLUMN IF NOT EXISTS link_status TEXT,
     ADD COLUMN IF NOT EXISTS raw_payload JSONB;
 
--- Historical signal metadata can be recovered from raw_payload without
--- claiming links that were never emitted by the EA.
+-- Recover only metadata explicitly present in historical signal payloads.
 UPDATE public.signal_evals
 SET
     execution_mode = COALESCE(
@@ -128,7 +124,10 @@ SET
     technical_signal_status = COALESCE(
         technical_signal_status,
         CASE
-            WHEN UPPER(COALESCE(action, '')) IN ('ENTRY_READY', 'ENTRY_ACCEPTED')
+            WHEN UPPER(COALESCE(action, '')) LIKE 'ENTRY_READY%'
+                 OR UPPER(COALESCE(action, '')) = 'ENTRY_ACCEPTED'
+                 OR UPPER(COALESCE(decision, '')) = 'SIGNAL'
+                 OR COALESCE(would_have_traded, FALSE) = TRUE
                 THEN 'ENTRY_READY'
             WHEN block_reason IS NOT NULL THEN 'BLOCKED'
             WHEN COALESCE(h4_signal, 0) <> 0 THEN 'RAW_SIGNAL'
@@ -160,11 +159,13 @@ SET
         raw_payload ->> 'scope_reason'
     );
 
--- Correct historical semantic labels conservatively. Entry evidence always
--- outranks a legacy decision='ERROR' summary label.
+-- Normalize legacy SIGNAL/BLOCKED/ERROR summaries. Entry evidence outranks a
+-- legacy ERROR label; directional ENTRY_READY_BUY/SELL actions are accepted.
 UPDATE public.signal_evals
 SET decision = CASE
-    WHEN UPPER(COALESCE(action, '')) IN ('ENTRY_READY', 'ENTRY_ACCEPTED')
+    WHEN UPPER(COALESCE(action, '')) LIKE 'ENTRY_READY%'
+         OR UPPER(COALESCE(action, '')) = 'ENTRY_ACCEPTED'
+         OR UPPER(COALESCE(decision, '')) = 'SIGNAL'
          OR COALESCE(would_have_traded, FALSE) = TRUE
     THEN CASE
         WHEN UPPER(COALESCE(execution_mode, '')) = 'SHADOW_ONLY'
@@ -174,6 +175,9 @@ SET decision = CASE
             THEN 'ENTRY_READY_REAL_ALLOWED'
         ELSE 'ENTRY_READY'
     END
+    WHEN UPPER(COALESCE(action, '')) LIKE '%SCOPE_DENY%'
+         OR UPPER(COALESCE(action, '')) LIKE '%FINAL_SCOPE_GUARD%'
+        THEN 'BLOCKED_BY_EXECUTION_SCOPE'
     WHEN block_reason IS NOT NULL
     THEN CASE
         WHEN LOWER(block_reason) SIMILAR TO
@@ -185,17 +189,11 @@ SET decision = CASE
 END
 WHERE decision IS NULL
    OR decision = ''
-   OR (
-       UPPER(decision) = 'ERROR'
-       AND (
-           UPPER(COALESCE(action, '')) IN ('ENTRY_READY', 'ENTRY_ACCEPTED')
-           OR COALESCE(would_have_traded, FALSE) = TRUE
-       )
-   );
+   OR UPPER(decision) IN ('ERROR', 'SIGNAL', 'BLOCKED');
 
--- Stable legacy IDs allow exact historical joins without imposing a foreign
--- key over incomplete evidence. Future Worker rows use their own deterministic
--- v1 ID contract consistently across signal_eval and trade_open payloads.
+-- Stable legacy IDs support exact historical joins without a foreign key over
+-- incomplete evidence. Future Worker rows use a deterministic v1 ID shared by
+-- signal_eval and trade_open payloads.
 UPDATE public.signal_evals
 SET signal_eval_id = 'stage10c-sig-legacy-' || MD5(
     COALESCE(symbol, '') || '|' ||
@@ -208,7 +206,7 @@ SET signal_eval_id = 'stage10c-sig-legacy-' || MD5(
 WHERE signal_eval_id IS NULL;
 
 -- Recover only unique historical signal -> open-position matches. The join is
--- intentionally exact and does not manufacture an order ticket.
+-- exact and deliberately does not manufacture an order ticket.
 WITH candidate_links AS (
     SELECT
         t.id AS trade_id,
@@ -223,10 +221,10 @@ WITH candidate_links AS (
      AND s.entry_price IS NOT NULL
      AND t.open_price IS NOT NULL
      AND ABS(s.entry_price - t.open_price) <= 0.00001
-     AND (
-          UPPER(COALESCE(s.action, '')) IN ('ENTRY_READY', 'ENTRY_ACCEPTED')
-          OR COALESCE(s.would_have_traded, FALSE) = TRUE
-          OR s.decision IN ('ENTRY_READY', 'ENTRY_READY_REAL_ALLOWED')
+     AND s.decision IN (
+         'ENTRY_READY',
+         'ENTRY_READY_REAL_ALLOWED',
+         'ENTRY_READY_SHADOW_ONLY_BLOCKED'
      )
     WHERE t.event_type = 'open'
       AND t.signal_eval_id IS NULL
@@ -238,10 +236,8 @@ SET signal_eval_id = c.signal_eval_id
 FROM candidate_links c
 WHERE t.id = c.trade_id;
 
--- The v4.43.0 payload proves that trade_open.ticket may equal position_id.
--- Therefore migration 006 never backfills order_ticket or deal_ticket from the
--- ambiguous legacy ticket column. Explicit IDs may be recovered only from
--- raw_payload fields when present.
+-- The active v4.43.0 payload proves trade_open.ticket may equal position_id.
+-- Never reclassify that ambiguous legacy field as an order or deal ticket.
 UPDATE public.trades
 SET order_ticket = (raw_payload ->> 'order_ticket')::BIGINT
 WHERE order_ticket IS NULL
@@ -254,8 +250,7 @@ WHERE deal_ticket IS NULL
   AND raw_payload IS NOT NULL
   AND COALESCE(raw_payload ->> 'deal_ticket', '') ~ '^\d+$';
 
--- Exact known Stage10C control backfill only. Other historical rows remain NULL
--- rather than receiving an inferred execution mode.
+-- Exact known Stage10C control backfill only. Other historical rows remain NULL.
 UPDATE public.trades
 SET execution_mode = 'REAL'
 WHERE execution_mode IS NULL
@@ -303,7 +298,6 @@ CREATE INDEX IF NOT EXISTS idx_signal_evals_decision
     ON public.signal_evals(decision);
 CREATE INDEX IF NOT EXISTS idx_signal_evals_strategy_variant
     ON public.signal_evals(strategy_variant);
-
 CREATE INDEX IF NOT EXISTS idx_trades_signal_eval_id
     ON public.trades(signal_eval_id);
 CREATE INDEX IF NOT EXISTS idx_trades_order_ticket
