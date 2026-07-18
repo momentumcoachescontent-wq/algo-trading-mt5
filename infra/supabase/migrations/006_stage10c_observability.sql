@@ -191,18 +191,50 @@ WHERE decision IS NULL
    OR decision = ''
    OR UPPER(decision) IN ('ERROR', 'SIGNAL', 'BLOCKED');
 
--- Stable legacy IDs support exact historical joins without a foreign key over
--- incomplete evidence. Future Worker rows use a deterministic v1 ID shared by
--- signal_eval and trade_open payloads.
+-- Canonical, transparent correlation key. Worker and SQL use the same prefix,
+-- field order, case normalization, UTC second precision, and 8-decimal price
+-- normalization. Controlled identity fields must not contain the `|` delimiter.
 UPDATE public.signal_evals
-SET signal_eval_id = 'stage10c-sig-legacy-' || MD5(
-    COALESCE(symbol, '') || '|' ||
-    COALESCE(ea_version, '') || '|' ||
-    COALESCE(strategy_variant, phase, '') || '|' ||
-    COALESCE(eval_time::TEXT, bar_h4::TEXT, '') || '|' ||
-    COALESCE(direction, '') || '|' ||
-    COALESCE(entry_price::TEXT, '')
-)
+SET signal_eval_id =
+    'stage10c-sig-v1|' ||
+    COALESCE(NULLIF(UPPER(BTRIM(symbol)), ''), 'unknown-symbol') || '|' ||
+    COALESCE(NULLIF(LOWER(BTRIM(ea_version)), ''), 'unknown-version') || '|' ||
+    COALESCE(
+        NULLIF(LOWER(BTRIM(COALESCE(strategy_variant, phase))), ''),
+        'unknown-variant'
+    ) || '|' ||
+    COALESCE(
+        TO_CHAR(
+            COALESCE(eval_time, bar_h4) AT TIME ZONE 'UTC',
+            'YYYY-MM-DD"T"HH24:MI:SS"Z"'
+        ),
+        'unknown-time'
+    ) || '|' ||
+    CASE
+        WHEN LOWER(COALESCE(direction, '')) = 'long'
+             OR LOWER(COALESCE(direction, '')) LIKE '%buy%'
+            THEN 'buy'
+        WHEN LOWER(COALESCE(direction, '')) = 'short'
+             OR LOWER(COALESCE(direction, '')) LIKE '%sell%'
+            THEN 'sell'
+        WHEN NULLIF(LOWER(BTRIM(COALESCE(direction, ''))), '') IS NULL
+            THEN 'no-direction'
+        ELSE LOWER(BTRIM(direction))
+    END || '|' ||
+    CASE
+        WHEN entry_price IS NULL THEN 'no-entry'
+        WHEN ROUND(entry_price::NUMERIC, 8) = 0 THEN '0'
+        ELSE RTRIM(
+            RTRIM(
+                TO_CHAR(
+                    ROUND(entry_price::NUMERIC, 8),
+                    'FM999999999999990.00000000'
+                ),
+                '0'
+            ),
+            '.'
+        )
+    END
 WHERE signal_eval_id IS NULL;
 
 -- Recover only unique historical signal -> open-position matches. The join is
@@ -308,6 +340,8 @@ CREATE INDEX IF NOT EXISTS idx_trades_open_link_identity
     ON public.trades(position_id, symbol, execution_mode, strategy_variant)
     WHERE close_time IS NULL;
 
+COMMENT ON COLUMN public.signal_evals.signal_eval_id IS
+    'Canonical Stage10C correlation key: v1|symbol|version|variant|time|direction|entry.';
 COMMENT ON COLUMN public.signal_evals.decision IS
     'Normalized semantic decision; valid shadow entries are not ERROR.';
 COMMENT ON COLUMN public.trades.order_ticket IS
