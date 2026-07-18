@@ -3,7 +3,9 @@
   "private": true,
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "test": "rm -rf .tmp-test && tsc src/observability.ts --target ES2022 --module commonjs --outDir .tmp-test --strict --skipLibCheck && node --test test/observability.test.cjs",
+    "typecheck": "tsc --noEmit --target ES2022 --module ESNext --moduleResolution Bundler --lib ES2022,WebWorker --strict --skipLibCheck src/index.ts src/observability.ts"
   },
   "dependencies": {
     "hono": "^4.0.0"
