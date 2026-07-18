@@ -2,9 +2,9 @@
 
 ## Status
 
-**Stage 1 — GOVERNANCE IMPLEMENTED / AWAITING VALIDATION**
+**Stage 1 — CLOSED / PASS**
 
-This charter defines the program boundary, engine identities, risk envelope, challenger-specific gates, and future branch isolation. It does not activate a challenger or authorize any new order path.
+The governance, identity, risk-envelope, challenger-gate, and branch-isolation contract has been implemented and validated locally and in CI. This charter does not activate a challenger or authorize any new order path.
 
 ## Objective
 
@@ -209,7 +209,7 @@ Each branch must pass its own validation and user checkpoint before the next imp
 
 ## Stage sequence after this charter
 
-1. Validate and close governance Stage 1.
+1. Stage 1 governance and isolation — **CLOSED / PASS**.
 2. Repair minimum Stage10C observability defects.
 3. Revalidate the exact Sleeve B implementation contract.
 4. Design the isolated Frequency body015 implementation.
@@ -220,7 +220,7 @@ Each branch must pass its own validation and user checkpoint before the next imp
 
 ## Explicit exclusions
 
-Stage 1 does not:
+Stage 1 did not:
 
 - modify an EA;
 - compile or deploy an EA;
@@ -237,15 +237,25 @@ Stage 1 does not:
 
 ```text
 machine-readable contract = PASS
+contract_id = 57d4efc4cf332d46c4cad9a5
 control frozen = PASS
 challenger-specific gates preserved = PASS
 activation_authorized = false
+production_capital_authorized = false
 account isolation defined = PASS
 identity isolation defined = PASS
 risk envelope defined = PASS
 future branch boundaries defined = PASS
-unit tests and CLI = PASS
+unit tests and CLI = PASS (9/9)
+local worktree hygiene = PASS
 CI = PASS
+Stage 1 status = CLOSED / PASS
 ```
 
-The stage closes only after the user validates the local output and the draft PR checks are green.
+Detailed closure evidence is recorded in:
+
+```text
+docs/stage10/DEMO_ACCELERATION_STAGE1_CLOSURE.md
+```
+
+The next authorized activity is Stage 2 observability repair on its own branch. No Stage 2 implementation is included in this charter closure.
