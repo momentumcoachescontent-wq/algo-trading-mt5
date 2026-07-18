@@ -3,14 +3,15 @@ name: Demo Acceleration Governance Tests
 on:
   pull_request:
     paths:
+      - ".gitignore"
       - "configs/demo_acceleration/*.json"
       - "python/governance/demo_acceleration_contract.py"
       - "python/pipeline/validate_demo_acceleration_contract.py"
       - "tests/test_demo_acceleration_contract.py"
       - "docs/adr/ADR-017-demo-acceleration-governance.md"
       - "docs/stage10/DEMO_ACCELERATION_PROGRAM_CHARTER.md"
+      - "docs/stage10/DEMO_ACCELERATION_STAGE1_CLOSURE.md"
       - "docs/stage10/README.md"
-      - ".gitignore"
       - ".github/workflows/demo-acceleration-governance-tests.yml"
   workflow_dispatch:
 
