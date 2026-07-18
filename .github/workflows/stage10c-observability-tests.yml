@@ -10,8 +10,11 @@ on:
       - "infra/worker/package.json"
       - "infra/worker/package-lock.json"
       - "infra/supabase/migrations/006_stage10c_observability.sql"
+      - "infra/supabase/validation/006_stage10c_observability_preflight.sql"
+      - "infra/supabase/validation/006_stage10c_observability_validation.sql"
       - "tests/test_stage10c_observability_contract.py"
       - "docs/stage10/STAGE10C_OBSERVABILITY_REPAIR.md"
+      - "docs/stage10/STAGE10C_OBSERVABILITY_OPERATIONAL_RUNBOOK.md"
       - "docs/stage10/README.md"
       - ".github/workflows/stage10c-observability-tests.yml"
   workflow_dispatch:
@@ -56,7 +59,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Validate migration and persistence contract
+      - name: Validate migration, persistence, and operational SQL contracts
         run: python -m unittest tests.test_stage10c_observability_contract -v
 
       - name: Regress Demo Acceleration governance
