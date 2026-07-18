@@ -4,6 +4,7 @@ import copy
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -72,7 +73,9 @@ class DemoAccelerationContractTests(unittest.TestCase):
         delta["confirmation"] = {"control": 1.0, "challenger": 0.5}
         result = validate_contract(mutated)
         self.assertFalse(result.passed)
-        self.assertTrue(any("must change body_c1_min and nothing else" in error for error in result.errors))
+        self.assertTrue(
+            any("must change body_c1_min and nothing else" in error for error in result.errors)
+        )
 
     def test_donchian_gate_cannot_be_replaced_by_generic_gate(self) -> None:
         mutated = copy.deepcopy(self.contract)
@@ -98,6 +101,59 @@ class DemoAccelerationContractTests(unittest.TestCase):
         self.assertTrue(any("account_slot" in error for error in result.errors))
         self.assertTrue(any("unique magic_number" in error for error in result.errors))
         self.assertTrue(any("unique strategy_variant" in error for error in result.errors))
+
+    def test_malformed_list_fields_do_not_crash(self) -> None:
+        mutated = copy.deepcopy(self.contract)
+        mutated["required_identity_fields"] = [["unhashable_list"]]
+        mutated["stage1_exit_criteria"] = None
+        mutated["engines"]["stage10c_v4430_control"]["frozen_fields"] = 123
+        mutated["engines"]["frequency_body015"]["required_unchanged_fields"] = {}
+        result = validate_contract(mutated)
+        self.assertFalse(result.passed)
+        self.assertTrue(
+            any("required_identity_fields must contain only strings" in error for error in result.errors)
+        )
+        self.assertTrue(any("stage1_exit_criteria must be a list" in error for error in result.errors))
+        self.assertTrue(any("frozen_fields must be a list" in error for error in result.errors))
+        self.assertTrue(any("required_unchanged_fields must be a list" in error for error in result.errors))
+
+    def test_planned_challengers_cannot_become_order_capable(self) -> None:
+        mutated = copy.deepcopy(self.contract)
+        sleeve = mutated["engines"]["sleeve_b_usdjpy_sell_touch025"]
+        sleeve["execution_mode"] = "DEMO_EXECUTION"
+        sleeve["order_send_allowed"] = True
+        result = validate_contract(mutated)
+        self.assertFalse(result.passed)
+        self.assertTrue(any("execution_mode" in error for error in result.errors))
+        self.assertTrue(any("order_send_allowed" in error for error in result.errors))
+
+    def test_reserved_engine_identities_are_pinned(self) -> None:
+        mutated = copy.deepcopy(self.contract)
+        frequency = mutated["engines"]["frequency_body015"]
+        frequency["magic_number"] = 99999999
+        frequency["strategy_variant"] = "arbitrary_unique_variant"
+        frequency["guard_version"] = "arbitrary_guard"
+        result = validate_contract(mutated)
+        self.assertFalse(result.passed)
+        self.assertTrue(any("magic_number" in error for error in result.errors))
+        self.assertTrue(any("strategy_variant" in error for error in result.errors))
+        self.assertTrue(any("guard_version" in error for error in result.errors))
+
+    def test_cli_returns_structured_error_for_malformed_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "malformed.json"
+            path.write_text(json.dumps({"required_identity_fields": None}), encoding="utf-8")
+            completed = subprocess.run(
+                [sys.executable, str(CLI_PATH), str(path)],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(completed.returncode, 2)
+        payload = json.loads(completed.stdout)
+        self.assertEqual(payload["status"], "FAIL_GOVERNANCE_CONTRACT")
+        self.assertTrue(payload["errors"])
 
     def test_cli_passes_canonical_contract(self) -> None:
         completed = subprocess.run(

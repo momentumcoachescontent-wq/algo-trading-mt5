@@ -34,13 +34,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         payload = load_contract(args.contract)
         result = validate_contract(payload)
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
+    except Exception as exc:  # CLI boundary: always return structured JSON.
         print(
             json.dumps(
                 {
                     "status": "FAIL_GOVERNANCE_CONTRACT",
                     "contract": str(args.contract),
-                    "errors": [str(exc)],
+                    "errors": [f"{type(exc).__name__}: {exc}"],
                 },
                 indent=2,
                 sort_keys=True,
