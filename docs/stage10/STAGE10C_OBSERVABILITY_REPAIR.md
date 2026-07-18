@@ -13,7 +13,17 @@ The 12–17 July 2026 review identified four material gaps:
 1. A valid v4.43.1 shadow entry emitted `ENTRY_ACCEPTED`, `would_have_traded=true`, and `SCOPE_DENY`, but the summary persisted `decision=ERROR`.
 2. The real trade row had `execution_mode=null` despite execution-scope evidence in the payload.
 3. `block_reason` mixed signal, governance, and execution-scope causes.
-4. `ticket` and `position_id` were treated as interchangeable, obscuring order/deal/position linking.
+4. `ticket` and `position_id` were treated as interchangeable, obscuring order/deal/position identity.
+
+A final comparison against the raw v4.43.0 payload confirmed:
+
+```text
+EXEC log order ticket:        2016949262
+trade_open payload ticket:    152340804622
+trade_open payload position:  152340804622
+```
+
+Therefore the current `trade_open.ticket` is the position identity, not a safe order-ticket source.
 
 ## Correct semantic contract
 
@@ -39,7 +49,7 @@ actual processing error only
     -> ERROR
 ```
 
-Entry evidence has precedence over a legacy raw `decision=ERROR` label. The Worker does not change `order_send_allowed`; it only persists the scope received from the EA.
+Entry evidence has precedence over a legacy raw `decision=ERROR` label. Directional actions such as `ENTRY_READY_BUY` and `ENTRY_READY_SELL` satisfy the entry-ready contract. The Worker does not change `order_send_allowed`; it only persists the scope received from the EA.
 
 ### Reasons
 
@@ -64,25 +74,40 @@ The original `block_reason`, `action`, and `raw_payload` are preserved.
 order_ticket != deal_ticket != position_id
 ```
 
-Legacy `ticket` remains for compatibility, but it is event-specific:
+The legacy `ticket` column is preserved exactly as emitted for compatibility. It is not reclassified automatically.
 
-```text
-trade_open  -> ticket mirrors order_ticket
-trade_close -> ticket mirrors deal_ticket
-```
+New rules:
 
-A legacy `ticket` is never copied into `position_id`.
+- `order_ticket` is populated only from explicit `order_ticket`, `order_id`, or an explicitly declared `ticket_role=ORDER`.
+- `deal_ticket` is populated only from explicit `deal_ticket`, `deal_id`, or an explicitly declared `ticket_role=DEAL`.
+- `position_id` is populated only from explicit position fields.
+- When the payload has `ticket == position_id`, `order_ticket` remains null.
+- `link_status` records missing order/deal identities instead of implying a complete link.
+
+The current v4.43.0 position can therefore achieve signal–position correlation, but its order ticket remains unavailable in the webhook payload. Full signal–order–position linking will require a future EA payload to emit `order_ticket` explicitly.
 
 ## Signal correlation
 
 Every signal evaluation receives `signal_eval_id`:
 
 - an explicit EA-provided ID is preserved;
-- otherwise the Worker derives a deterministic non-cryptographic correlation ID from symbol, EA version, strategy variant, evaluated H4/evaluation time, direction, and entry price;
+- otherwise the Worker derives a deterministic non-cryptographic correlation ID;
+- the canonical identity uses symbol, EA version, strategy variant or phase, evaluation/open time, direction, and entry price;
+- Stage10C `eval_time` and `trade_open.open_time` represent the same entry instant, allowing both payloads to derive the same ID;
 - retries of the same payload resolve to the same ID;
 - the migration adds an index but does not impose a foreign key over incomplete historical evidence.
 
-Trades persist `signal_eval_id` only when supplied or safely available. Missing historical links remain null instead of being inferred.
+For historical rows, the migration creates legacy IDs and links only exact, unique matches by:
+
+```text
+symbol
+ea_version
+direction
+eval_time = open_time
+entry_price = open_price
+```
+
+Ambiguous or missing historical links remain explicit rather than inferred.
 
 ## Safe close matching
 
@@ -106,8 +131,6 @@ Migration:
 ```text
 infra/supabase/migrations/006_stage10c_observability.sql
 ```
-
-New or normalized fields include:
 
 ### `signal_evals`
 
@@ -147,10 +170,11 @@ raw_payload
 
 Historical backfill is intentionally conservative:
 
-- open `ticket` backfills only `order_ticket`;
-- close `ticket` backfills only `deal_ticket`;
+- legacy `ticket` is never copied to `order_ticket`, `deal_ticket`, or `position_id`;
+- explicit order/deal fields may be recovered from historical `raw_payload`;
+- exact unique signal–position matches may be recovered;
 - the exact known v4.43.0 USDJPY control may backfill `execution_mode=REAL`;
-- no historical signal-to-trade link is invented;
+- missing or ambiguous order/deal links remain null;
 - legacy link quality is recorded explicitly.
 
 ## Worker behavior
@@ -163,7 +187,7 @@ Worker version:
 
 Signal-evaluation persistence is now required for a successful webhook response. A rejected `signal_evals` insert returns HTTP 500 instead of a misleading HTTP 200, allowing the EA/log audit to detect missing evidence.
 
-Lifecycle events remain best-effort. Retry/spool architecture is outside this stage.
+Lifecycle events remain best-effort. Retry/spool architecture and changes to the EA payload are outside this stage.
 
 ## Deployment order
 
@@ -174,8 +198,8 @@ This PR does not deploy anything. After local validation and explicit approval, 
 2. Run schema/backfill validation queries.
 3. Deploy Worker v3.3.0.
 4. Send controlled signal/open/close test payloads.
-5. Validate Supabase linking and semantic decisions.
-6. Observe organic H4 events before closing Stage 2.
+5. Validate Supabase decision and linking fields.
+6. Observe organic H4 events before operational closure.
 ```
 
 Deploying the Worker before the migration is prohibited because new columns would be rejected by PostgREST.
@@ -195,8 +219,8 @@ python3 -m unittest tests.test_stage10c_observability_contract -v
 Expected:
 
 ```text
-11 Node tests PASS
-9 Python contract tests PASS
+13 Node tests PASS
+11 Python contract tests PASS
 TypeScript PASS
 ```
 
@@ -211,8 +235,10 @@ migration contract tests = PASS
 valid shadow entry != ERROR = PASS
 execution_mode persistence contract = PASS
 reason separation contract = PASS
-order/deal/position separation = PASS
+legacy ticket is not misclassified = PASS
+future signal-position correlation = PASS
 single-row close matching = PASS
+missing order/deal identity remains explicit = PASS
 no EA or strategy change = PASS
 local worktree clean = PASS
 CI = PASS
