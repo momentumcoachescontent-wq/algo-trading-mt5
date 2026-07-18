@@ -5,6 +5,7 @@ on:
     paths:
       - "infra/worker/src/index.ts"
       - "infra/worker/src/observability.ts"
+      - "infra/worker/src/tradeCandidate.ts"
       - "infra/worker/test/observability.test.cjs"
       - "infra/worker/package.json"
       - "infra/worker/package-lock.json"
