@@ -2,11 +2,11 @@
 
 ## Status
 
-**Stage 2 — IMPLEMENTATION VALIDATED / READY FOR OPERATIONAL CHECKPOINT**
+**Stage 2 — CODE VALIDATED / OPERATIONAL CHECKPOINT A PENDING**
 
 This stage repairs Worker and Supabase observability semantics. It does not modify an EA, strategy parameter, signal rule, risk, SL, TP, session, execution policy, or capital authorization. Sleeve B, Frequency body015, and Donchian remain inactive.
 
-Code, contract, dependency-security, local, and CI validation are complete. Operational closure still requires migration, Worker deployment, controlled payload validation, and organic H4 evidence.
+Code, contracts, production-dependency security, local validation, and CI are PASS. Migration execution and Worker deployment remain separate operational checkpoints governed by `STAGE10C_OBSERVABILITY_OPERATIONAL_RUNBOOK.md`.
 
 ## Evidence that triggered the repair
 
@@ -144,6 +144,14 @@ Migration:
 infra/supabase/migrations/006_stage10c_observability.sql
 ```
 
+Operational preflight and validation:
+
+```text
+infra/supabase/validation/006_stage10c_observability_preflight.sql
+infra/supabase/validation/006_stage10c_observability_validation.sql
+docs/stage10/STAGE10C_OBSERVABILITY_OPERATIONAL_RUNBOOK.md
+```
+
 ### `signal_evals`
 
 ```text
@@ -203,32 +211,41 @@ Lifecycle events remain best-effort. Retry/spool architecture and changes to the
 
 ## Production dependency security
 
-The initial production audit detected a high-severity advisory against the resolved Hono version `4.12.9`. The dependency is now pinned exactly:
+The production framework is pinned exactly:
 
 ```text
 hono = 4.12.30
 ```
 
-Validation result:
+Validation evidence:
 
 ```text
-npm audit --omit=dev
-found 0 vulnerabilities
+npm test = 17/17 PASS
+npm run typecheck = PASS
+npm audit --omit=dev = 0 vulnerabilities
 ```
 
-The full development tree may still report advisories in development-only tooling. The deployment gate is the production tree audit, and CI now runs `npm audit --omit=dev` on every relevant pull request change.
+The full development dependency tree may report advisories from tooling; the deployable production dependency tree must remain at zero known vulnerabilities. CI enforces `npm audit --omit=dev` before semantic tests.
 
-## Deployment order
+## Operational checkpoint order
 
-This PR does not deploy anything. After explicit operational authorization, the required order is:
+This PR has not deployed anything. The mandatory order is:
 
 ```text
-1. Apply 006_stage10c_observability.sql.
-2. Run schema/backfill validation queries.
-3. Deploy Worker v3.3.0.
-4. Send controlled signal/open/close test payloads.
-5. Validate Supabase decision and linking fields.
-6. Observe organic H4 events before operational closure.
+Checkpoint A
+1. Run read-only preflight.
+2. Apply 006_stage10c_observability.sql.
+3. Run read-only post-migration validation.
+4. Reconcile pre/post row counts.
+5. Review results.
+
+Checkpoint B — only after Checkpoint A approval
+6. Deploy Worker v3.3.0.
+7. Send controlled signal/open/close payloads.
+8. Validate Supabase decision and linking fields.
+
+Checkpoint C
+9. Observe organic H4 events before operational closure.
 ```
 
 Deploying the Worker before the migration is prohibited because new columns would be rejected by PostgREST.
@@ -249,21 +266,21 @@ python3 -m unittest tests.test_stage10c_observability_contract -v
 Expected:
 
 ```text
-production dependency vulnerabilities = 0
 17 Node tests PASS
-13 Python contract tests PASS
+17 Python contract tests PASS
 TypeScript PASS
+production audit = 0 vulnerabilities
 ```
 
 ## Exit gate
 
-Stage 2 implementation is ready for operational deployment only when:
+Stage 2 implementation is ready for operational migration when:
 
 ```text
 Worker normalization tests = PASS
 Worker typecheck = PASS
 migration contract tests = PASS
-production dependency audit = PASS / 0 vulnerabilities
+operational SQL contract tests = PASS
 valid shadow entry != ERROR = PASS
 execution_mode persistence contract = PASS
 reason separation contract = PASS
@@ -273,9 +290,10 @@ future signal-position correlation = PASS
 explicit candidate metadata mismatch rejected = PASS
 single-row close matching = PASS
 missing order/deal identity remains explicit = PASS
+production dependency audit = 0 vulnerabilities
 no EA or strategy change = PASS
 local worktree clean = PASS
 CI = PASS
 ```
 
-Operational closure requires a later migration/deployment validation checkpoint. It is not implied by implementation-level PASS.
+Operational closure requires migration, deployment, controlled payload validation, and organic H4 evidence. It is not implied by code-level PASS.
