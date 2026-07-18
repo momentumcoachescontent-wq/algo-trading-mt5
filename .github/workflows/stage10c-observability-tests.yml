@@ -1,0 +1,61 @@
+name: Stage10C Observability Tests
+
+on:
+  pull_request:
+    paths:
+      - "infra/worker/src/index.ts"
+      - "infra/worker/src/observability.ts"
+      - "infra/worker/test/observability.test.cjs"
+      - "infra/worker/package.json"
+      - "infra/worker/package-lock.json"
+      - "infra/supabase/migrations/006_stage10c_observability.sql"
+      - "tests/test_stage10c_observability_contract.py"
+      - "docs/stage10/STAGE10C_OBSERVABILITY_REPAIR.md"
+      - "docs/stage10/README.md"
+      - ".github/workflows/stage10c-observability-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  worker-observability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: infra/worker/package-lock.json
+
+      - name: Install Worker dependencies
+        working-directory: infra/worker
+        run: npm ci
+
+      - name: Run observability semantic tests
+        working-directory: infra/worker
+        run: npm test
+
+      - name: Type-check Worker
+        working-directory: infra/worker
+        run: npm run typecheck
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate migration and persistence contract
+        run: python -m unittest tests.test_stage10c_observability_contract -v
+
+      - name: Regress Demo Acceleration governance
+        run: |
+          python python/pipeline/validate_demo_acceleration_contract.py \
+            configs/demo_acceleration/demo_acceleration_v1.json
+          python -m unittest tests.test_demo_acceleration_contract -v
