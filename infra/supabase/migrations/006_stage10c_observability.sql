@@ -42,6 +42,31 @@ ALTER TABLE public.trades
     ADD COLUMN IF NOT EXISTS link_status TEXT,
     ADD COLUMN IF NOT EXISTS raw_payload JSONB;
 
+-- The legacy schema constrained decision to SIGNAL/BLOCKED/OPENED/CLOSED/ERROR.
+-- Replace it with a strict superset before normalizing historical rows. This is
+-- intentionally idempotent and preserves every legacy value.
+ALTER TABLE public.signal_evals
+    DROP CONSTRAINT IF EXISTS signal_evals_decision_check;
+
+ALTER TABLE public.signal_evals
+    ADD CONSTRAINT signal_evals_decision_check CHECK (
+        decision IS NULL OR decision IN (
+            'SIGNAL',
+            'BLOCKED',
+            'OPENED',
+            'CLOSED',
+            'ERROR',
+            'ENTRY_READY',
+            'ENTRY_READY_REAL_ALLOWED',
+            'ENTRY_READY_SHADOW_ONLY_BLOCKED',
+            'BLOCKED_BY_EXECUTION_SCOPE',
+            'BLOCKED_BY_GOVERNANCE_GUARD',
+            'BLOCKED_BY_TECHNICAL_GUARD',
+            'RAW_SIGNAL',
+            'NO_SIGNAL'
+        )
+    );
+
 -- Recover only metadata explicitly present in historical signal payloads.
 UPDATE public.signal_evals
 SET
