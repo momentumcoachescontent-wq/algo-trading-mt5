@@ -1,6 +1,6 @@
 """Validate the Demo Acceleration governance contract.
 
-This module is intentionally standard-library only.  It validates governance and
+This module is intentionally standard-library only. It validates governance and
 identity decisions; it does not activate an EA, change risk, send an order, or write
 to production systems.
 """
@@ -20,6 +20,38 @@ EXPECTED_ENGINE_IDS = {
     "sleeve_b_usdjpy_sell_touch025",
     "frequency_body015",
     "stage10d_donchian",
+}
+EXPECTED_ENGINE_IDENTITIES: dict[str, dict[str, Any]] = {
+    "stage10c_v4430_control": {
+        "strategy_variant": "stage10c_v4430_usdjpy_control",
+        "execution_mode": "DEMO_EXECUTION_CONTROL",
+        "magic_number": 20260527,
+        "guard_version": "v4430_stage10c_control",
+    },
+    "stage10c_v4431_d1_shadow": {
+        "strategy_variant": "stage10c_v4431_d1_context_integrity",
+        "execution_mode": "SHADOW_ONLY",
+        "magic_number": 20260711,
+        "guard_version": "v4431_d1_context_integrity",
+    },
+    "sleeve_b_usdjpy_sell_touch025": {
+        "strategy_variant": "stage10b_usdjpy_sell_touch025_demo",
+        "execution_mode": "DEMO_EXPERIMENTAL_PLANNED",
+        "magic_number": 20260721,
+        "guard_version": "stage10a_sleeve_b_gate_v1",
+    },
+    "frequency_body015": {
+        "strategy_variant": "stage10c_usdjpy_body015_demo",
+        "execution_mode": "DEMO_EXPERIMENTAL_PLANNED",
+        "magic_number": 20260722,
+        "guard_version": "stage10c_frequency_body015_v1",
+    },
+    "stage10d_donchian": {
+        "strategy_variant": "stage10d_donchian_research",
+        "execution_mode": "OFFLINE_ONLY",
+        "magic_number": 20260723,
+        "guard_version": "stage10d_research_gate_v1",
+    },
 }
 REQUIRED_IDENTITY_FIELDS = {
     "experiment_id",
@@ -112,12 +144,14 @@ def _as_mapping(value: Any, path: str, errors: list[str]) -> Mapping[str, Any]:
     return value
 
 
-def _require_equal(
-    observed: Any,
-    expected: Any,
-    path: str,
-    errors: list[str],
-) -> None:
+def _as_list(value: Any, path: str, errors: list[str]) -> list[Any]:
+    if not isinstance(value, list):
+        errors.append(f"{path} must be a list")
+        return []
+    return value
+
+
+def _require_equal(observed: Any, expected: Any, path: str, errors: list[str]) -> None:
     if observed != expected:
         errors.append(f"{path} must equal {expected!r}; observed {observed!r}")
 
@@ -142,64 +176,111 @@ def _validate_global_contract(payload: Mapping[str, Any], errors: list[str]) -> 
     )
     _require_equal(payload.get("symbol_scope"), ["USDJPY"], "symbol_scope", errors)
 
-    identity_fields = set(payload.get("required_identity_fields", []))
+    identity_fields = set(
+        _as_list(payload.get("required_identity_fields"), "required_identity_fields", errors)
+    )
     if identity_fields != REQUIRED_IDENTITY_FIELDS:
         errors.append(
             "required_identity_fields must exactly preserve the approved audit identity"
         )
 
-    exit_criteria = set(payload.get("stage1_exit_criteria", []))
+    exit_criteria = set(
+        _as_list(payload.get("stage1_exit_criteria"), "stage1_exit_criteria", errors)
+    )
     if exit_criteria != REQUIRED_STAGE1_EXIT_CRITERIA:
-        errors.append("stage1_exit_criteria must exactly match the approved Stage 1 closure set")
+        errors.append(
+            "stage1_exit_criteria must exactly match the approved Stage 1 closure set"
+        )
 
     limits = _as_mapping(payload.get("global_risk_limits"), "global_risk_limits", errors)
-    _require_equal(limits.get("max_experimental_open_risk_pct"), 2.0, "global_risk_limits.max_experimental_open_risk_pct", errors)
-    _require_equal(limits.get("max_same_direction_usdjpy_risk_pct"), 1.25, "global_risk_limits.max_same_direction_usdjpy_risk_pct", errors)
-    _require_equal(limits.get("max_experimental_positions"), 3, "global_risk_limits.max_experimental_positions", errors)
-    _require_equal(limits.get("daily_new_entry_block_pct"), 2.5, "global_risk_limits.daily_new_entry_block_pct", errors)
-    _require_equal(limits.get("weekly_program_pause_pct"), 5.0, "global_risk_limits.weekly_program_pause_pct", errors)
-    _require_equal(limits.get("program_drawdown_stop_pct"), 7.0, "global_risk_limits.program_drawdown_stop_pct", errors)
+    expected_limits = {
+        "max_experimental_open_risk_pct": 2.0,
+        "max_same_direction_usdjpy_risk_pct": 1.25,
+        "max_experimental_positions": 3,
+        "daily_new_entry_block_pct": 2.5,
+        "weekly_program_pause_pct": 5.0,
+        "program_drawdown_stop_pct": 7.0,
+    }
+    for key, expected in expected_limits.items():
+        _require_equal(limits.get(key), expected, f"global_risk_limits.{key}", errors)
+
+
+def _validate_pinned_identity(
+    engine_id: str,
+    engine: Mapping[str, Any],
+    errors: list[str],
+) -> None:
+    prefix = f"engines.{engine_id}"
+    for field, expected in EXPECTED_ENGINE_IDENTITIES[engine_id].items():
+        _require_equal(engine.get(field), expected, f"{prefix}.{field}", errors)
 
 
 def _validate_control(engine: Mapping[str, Any], errors: list[str]) -> None:
     prefix = "engines.stage10c_v4430_control"
     _require_equal(engine.get("role"), "CONTROL", f"{prefix}.role", errors)
-    _require_equal(engine.get("lifecycle_status"), "EXISTING_DEMO_CONTROL", f"{prefix}.lifecycle_status", errors)
+    _require_equal(
+        engine.get("lifecycle_status"),
+        "EXISTING_DEMO_CONTROL",
+        f"{prefix}.lifecycle_status",
+        errors,
+    )
     _require_false(engine.get("activation_in_this_stage"), f"{prefix}.activation_in_this_stage", errors)
     _require_equal(engine.get("account_slot"), "DEMO_A", f"{prefix}.account_slot", errors)
-    _require_equal(engine.get("execution_mode"), "DEMO_EXECUTION_CONTROL", f"{prefix}.execution_mode", errors)
-    _require_equal(engine.get("magic_number"), 20260527, f"{prefix}.magic_number", errors)
     _require_equal(engine.get("initial_risk_pct"), 0.25, f"{prefix}.initial_risk_pct", errors)
     _require_equal(engine.get("max_risk_pct"), 0.25, f"{prefix}.max_risk_pct", errors)
     _require_true(engine.get("parameters_frozen"), f"{prefix}.parameters_frozen", errors)
-    if set(engine.get("frozen_fields", [])) != REQUIRED_CONTROL_FROZEN_FIELDS:
+    frozen_fields = _as_list(engine.get("frozen_fields"), f"{prefix}.frozen_fields", errors)
+    if set(frozen_fields) != REQUIRED_CONTROL_FROZEN_FIELDS:
         errors.append(f"{prefix}.frozen_fields must preserve the complete control parameter set")
 
 
 def _validate_d1_shadow(engine: Mapping[str, Any], errors: list[str]) -> None:
     prefix = "engines.stage10c_v4431_d1_shadow"
-    _require_equal(engine.get("execution_mode"), "SHADOW_ONLY", f"{prefix}.execution_mode", errors)
     _require_false(engine.get("activation_in_this_stage"), f"{prefix}.activation_in_this_stage", errors)
     _require_false(engine.get("order_send_allowed"), f"{prefix}.order_send_allowed", errors)
     _require_equal(engine.get("initial_risk_pct"), 0.0, f"{prefix}.initial_risk_pct", errors)
     _require_equal(engine.get("max_risk_pct"), 0.0, f"{prefix}.max_risk_pct", errors)
-    _require_false(engine.get("economic_performance_measurable"), f"{prefix}.economic_performance_measurable", errors)
-    _require_equal(engine.get("required_future_capability"), "SHADOW_TRADE_LEDGER", f"{prefix}.required_future_capability", errors)
+    _require_false(
+        engine.get("economic_performance_measurable"),
+        f"{prefix}.economic_performance_measurable",
+        errors,
+    )
+    _require_equal(
+        engine.get("required_future_capability"),
+        "SHADOW_TRADE_LEDGER",
+        f"{prefix}.required_future_capability",
+        errors,
+    )
 
 
 def _validate_sleeve_b(engine: Mapping[str, Any], errors: list[str]) -> None:
     prefix = "engines.sleeve_b_usdjpy_sell_touch025"
-    _require_equal(engine.get("lifecycle_status"), "PLANNED_NOT_AUTHORIZED", f"{prefix}.lifecycle_status", errors)
+    _require_equal(
+        engine.get("lifecycle_status"),
+        "PLANNED_NOT_AUTHORIZED",
+        f"{prefix}.lifecycle_status",
+        errors,
+    )
     _require_false(engine.get("activation_in_this_stage"), f"{prefix}.activation_in_this_stage", errors)
+    _require_false(engine.get("order_send_allowed", False), f"{prefix}.order_send_allowed", errors)
     _require_equal(engine.get("account_slot"), "DEMO_B", f"{prefix}.account_slot", errors)
     _require_equal(engine.get("direction_scope"), "SELL", f"{prefix}.direction_scope", errors)
     _require_equal(engine.get("initial_risk_pct"), 0.5, f"{prefix}.initial_risk_pct", errors)
     _require_equal(engine.get("max_risk_pct"), 0.75, f"{prefix}.max_risk_pct", errors)
-    _require_equal(engine.get("risk_escalation_requires_clean_trades"), 5, f"{prefix}.risk_escalation_requires_clean_trades", errors)
+    _require_equal(
+        engine.get("risk_escalation_requires_clean_trades"),
+        5,
+        f"{prefix}.risk_escalation_requires_clean_trades",
+        errors,
+    )
 
     gate = _as_mapping(engine.get("continuity_gate"), f"{prefix}.continuity_gate", errors)
     _require_equal(gate.get("gate_owner"), "STAGE10A", f"{prefix}.continuity_gate.gate_owner", errors)
-    _require_false(gate.get("gate_replacement_allowed"), f"{prefix}.continuity_gate.gate_replacement_allowed", errors)
+    _require_false(
+        gate.get("gate_replacement_allowed"),
+        f"{prefix}.continuity_gate.gate_replacement_allowed",
+        errors,
+    )
     _require_equal(gate.get("minimum_forward_weeks"), 16, f"{prefix}.continuity_gate.minimum_forward_weeks", errors)
     _require_equal(gate.get("minimum_trades"), 30, f"{prefix}.continuity_gate.minimum_trades", errors)
     _require_equal(gate.get("median_r_strictly_greater_than"), 0.0, f"{prefix}.continuity_gate.median_r_strictly_greater_than", errors)
@@ -208,8 +289,14 @@ def _validate_sleeve_b(engine: Mapping[str, Any], errors: list[str]) -> None:
 
 def _validate_frequency(engine: Mapping[str, Any], errors: list[str]) -> None:
     prefix = "engines.frequency_body015"
-    _require_equal(engine.get("lifecycle_status"), "PLANNED_NOT_AUTHORIZED", f"{prefix}.lifecycle_status", errors)
+    _require_equal(
+        engine.get("lifecycle_status"),
+        "PLANNED_NOT_AUTHORIZED",
+        f"{prefix}.lifecycle_status",
+        errors,
+    )
     _require_false(engine.get("activation_in_this_stage"), f"{prefix}.activation_in_this_stage", errors)
+    _require_false(engine.get("order_send_allowed", False), f"{prefix}.order_send_allowed", errors)
     _require_equal(engine.get("account_slot"), "DEMO_C", f"{prefix}.account_slot", errors)
     _require_equal(engine.get("initial_risk_pct"), 0.5, f"{prefix}.initial_risk_pct", errors)
     _require_equal(engine.get("max_risk_pct"), 0.75, f"{prefix}.max_risk_pct", errors)
@@ -217,23 +304,49 @@ def _validate_frequency(engine: Mapping[str, Any], errors: list[str]) -> None:
     delta = _as_mapping(engine.get("parameter_delta"), f"{prefix}.parameter_delta", errors)
     if set(delta) != {"body_c1_min"}:
         errors.append(f"{prefix}.parameter_delta must change body_c1_min and nothing else")
-    body_delta = _as_mapping(delta.get("body_c1_min"), f"{prefix}.parameter_delta.body_c1_min", errors)
+    body_delta = _as_mapping(
+        delta.get("body_c1_min"),
+        f"{prefix}.parameter_delta.body_c1_min",
+        errors,
+    )
     _require_equal(body_delta.get("control"), 0.25, f"{prefix}.parameter_delta.body_c1_min.control", errors)
     _require_equal(body_delta.get("challenger"), 0.15, f"{prefix}.parameter_delta.body_c1_min.challenger", errors)
 
-    if set(engine.get("required_unchanged_fields", [])) != REQUIRED_FREQUENCY_UNCHANGED_FIELDS:
-        errors.append(f"{prefix}.required_unchanged_fields must preserve every non-body causal field")
+    unchanged_fields = _as_list(
+        engine.get("required_unchanged_fields"),
+        f"{prefix}.required_unchanged_fields",
+        errors,
+    )
+    if set(unchanged_fields) != REQUIRED_FREQUENCY_UNCHANGED_FIELDS:
+        errors.append(
+            f"{prefix}.required_unchanged_fields must preserve every non-body causal field"
+        )
 
     technical = _as_mapping(engine.get("technical_checkpoint"), f"{prefix}.technical_checkpoint", errors)
     _require_equal(technical.get("minimum_trades"), 8, f"{prefix}.technical_checkpoint.minimum_trades", errors)
-    _require_equal(technical.get("purpose"), "CONTINUE_TECHNICAL_VALIDATION_ONLY", f"{prefix}.technical_checkpoint.purpose", errors)
+    _require_equal(
+        technical.get("purpose"),
+        "CONTINUE_TECHNICAL_VALIDATION_ONLY",
+        f"{prefix}.technical_checkpoint.purpose",
+        errors,
+    )
 
     provisional = _as_mapping(engine.get("provisional_checkpoint"), f"{prefix}.provisional_checkpoint", errors)
     _require_equal(provisional.get("minimum_trades"), 15, f"{prefix}.provisional_checkpoint.minimum_trades", errors)
-    _require_equal(provisional.get("purpose"), "CONTINUE_DEMO_ONLY", f"{prefix}.provisional_checkpoint.purpose", errors)
+    _require_equal(
+        provisional.get("purpose"),
+        "CONTINUE_DEMO_ONLY",
+        f"{prefix}.provisional_checkpoint.purpose",
+        errors,
+    )
 
     strong = _as_mapping(engine.get("proposed_strong_gate"), f"{prefix}.proposed_strong_gate", errors)
-    _require_equal(strong.get("gate_status"), "PROPOSED_REQUIRES_SEPARATE_APPROVAL", f"{prefix}.proposed_strong_gate.gate_status", errors)
+    _require_equal(
+        strong.get("gate_status"),
+        "PROPOSED_REQUIRES_SEPARATE_APPROVAL",
+        f"{prefix}.proposed_strong_gate.gate_status",
+        errors,
+    )
     _require_equal(strong.get("minimum_trades"), 30, f"{prefix}.proposed_strong_gate.minimum_trades", errors)
     _require_equal(strong.get("top3_share_strictly_less_than"), 0.4, f"{prefix}.proposed_strong_gate.top3_share_strictly_less_than", errors)
     _require_true(strong.get("out_of_sample_required"), f"{prefix}.proposed_strong_gate.out_of_sample_required", errors)
@@ -241,13 +354,22 @@ def _validate_frequency(engine: Mapping[str, Any], errors: list[str]) -> None:
 
 def _validate_donchian(engine: Mapping[str, Any], errors: list[str]) -> None:
     prefix = "engines.stage10d_donchian"
-    _require_equal(engine.get("lifecycle_status"), "OFFLINE_RESEARCH_ONLY", f"{prefix}.lifecycle_status", errors)
+    _require_equal(
+        engine.get("lifecycle_status"),
+        "OFFLINE_RESEARCH_ONLY",
+        f"{prefix}.lifecycle_status",
+        errors,
+    )
     _require_false(engine.get("activation_in_this_stage"), f"{prefix}.activation_in_this_stage", errors)
-    _require_equal(engine.get("execution_mode"), "OFFLINE_ONLY", f"{prefix}.execution_mode", errors)
     _require_false(engine.get("order_send_allowed"), f"{prefix}.order_send_allowed", errors)
     _require_equal(engine.get("initial_risk_pct"), 0.0, f"{prefix}.initial_risk_pct", errors)
     _require_equal(engine.get("max_risk_pct"), 0.0, f"{prefix}.max_risk_pct", errors)
-    _require_equal(engine.get("demo_execution_block"), "BLOCKED_UNTIL_FULL_ENTRY_GATE_PASS", f"{prefix}.demo_execution_block", errors)
+    _require_equal(
+        engine.get("demo_execution_block"),
+        "BLOCKED_UNTIL_FULL_ENTRY_GATE_PASS",
+        f"{prefix}.demo_execution_block",
+        errors,
+    )
 
     gate = _as_mapping(engine.get("entry_gate"), f"{prefix}.entry_gate", errors)
     _require_equal(gate.get("gate_owner"), "STAGE10D_APPROVED_2026_07_10", f"{prefix}.entry_gate.gate_owner", errors)
@@ -256,7 +378,12 @@ def _validate_donchian(engine: Mapping[str, Any], errors: list[str]) -> None:
     _require_equal(gate.get("minimum_profit_factor_strictly_greater_than"), 1.15, f"{prefix}.entry_gate.minimum_profit_factor_strictly_greater_than", errors)
     _require_true(gate.get("out_of_sample_required"), f"{prefix}.entry_gate.out_of_sample_required", errors)
     _require_equal(gate.get("mandatory_condition_count"), 4, f"{prefix}.entry_gate.mandatory_condition_count", errors)
-    _require_equal(gate.get("mandatory_conditions_source"), "APPROVED_2026_07_10_DECISION_AND_STAGE10D_CHARTER", f"{prefix}.entry_gate.mandatory_conditions_source", errors)
+    _require_equal(
+        gate.get("mandatory_conditions_source"),
+        "APPROVED_2026_07_10_DECISION_AND_STAGE10D_CHARTER",
+        f"{prefix}.entry_gate.mandatory_conditions_source",
+        errors,
+    )
     _require_true(gate.get("all_mandatory_conditions_required"), f"{prefix}.entry_gate.all_mandatory_conditions_required", errors)
 
     data = _as_mapping(engine.get("canonical_data"), f"{prefix}.canonical_data", errors)
@@ -265,20 +392,36 @@ def _validate_donchian(engine: Mapping[str, Any], errors: list[str]) -> None:
     _require_false(data.get("synthetic_promotion_evidence_allowed"), f"{prefix}.canonical_data.synthetic_promotion_evidence_allowed", errors)
 
 
-def _validate_isolation(payload: Mapping[str, Any], engines: Mapping[str, Any], errors: list[str]) -> None:
+def _validate_isolation(
+    payload: Mapping[str, Any],
+    engines: Mapping[str, Any],
+    errors: list[str],
+) -> None:
     isolation = _as_mapping(payload.get("isolation_rules"), "isolation_rules", errors)
     _require_true(isolation.get("separate_accounts_preferred"), "isolation_rules.separate_accounts_preferred", errors)
-    _require_false(isolation.get("shared_netting_account_for_experimental_engines_allowed"), "isolation_rules.shared_netting_account_for_experimental_engines_allowed", errors)
+    _require_false(
+        isolation.get("shared_netting_account_for_experimental_engines_allowed"),
+        "isolation_rules.shared_netting_account_for_experimental_engines_allowed",
+        errors,
+    )
     _require_true(isolation.get("unique_magic_numbers_required"), "isolation_rules.unique_magic_numbers_required", errors)
     _require_true(isolation.get("unique_strategy_variants_required"), "isolation_rules.unique_strategy_variants_required", errors)
     _require_false(isolation.get("cross_engine_position_adoption_allowed"), "isolation_rules.cross_engine_position_adoption_allowed", errors)
     _require_false(isolation.get("manual_discretionary_intervention_allowed"), "isolation_rules.manual_discretionary_intervention_allowed", errors)
 
-    magic_numbers = [engine.get("magic_number") for engine in engines.values() if isinstance(engine, Mapping)]
+    magic_numbers = [
+        engine.get("magic_number")
+        for engine in engines.values()
+        if isinstance(engine, Mapping)
+    ]
     if len(magic_numbers) != len(set(magic_numbers)):
         errors.append("every engine must have a unique magic_number")
 
-    variants = [engine.get("strategy_variant") for engine in engines.values() if isinstance(engine, Mapping)]
+    variants = [
+        engine.get("strategy_variant")
+        for engine in engines.values()
+        if isinstance(engine, Mapping)
+    ]
     if len(variants) != len(set(variants)):
         errors.append("every engine must have a unique strategy_variant")
 
@@ -292,7 +435,12 @@ def _validate_isolation(payload: Mapping[str, Any], engines: Mapping[str, Any], 
     for engine_id, expected_account in expected_accounts.items():
         engine = engines.get(engine_id, {})
         if isinstance(engine, Mapping):
-            _require_equal(engine.get("account_slot"), expected_account, f"engines.{engine_id}.account_slot", errors)
+            _require_equal(
+                engine.get("account_slot"),
+                expected_account,
+                f"engines.{engine_id}.account_slot",
+                errors,
+            )
 
     branches = _as_mapping(payload.get("future_branch_boundaries"), "future_branch_boundaries", errors)
     branch_values = list(branches.values())
@@ -308,17 +456,20 @@ def validate_contract(payload: Mapping[str, Any]) -> ContractValidation:
     if set(engines) != EXPECTED_ENGINE_IDS:
         errors.append("engines must exactly match the approved control and challenger set")
 
-    control = _as_mapping(engines.get("stage10c_v4430_control"), "engines.stage10c_v4430_control", errors)
-    d1_shadow = _as_mapping(engines.get("stage10c_v4431_d1_shadow"), "engines.stage10c_v4431_d1_shadow", errors)
-    sleeve_b = _as_mapping(engines.get("sleeve_b_usdjpy_sell_touch025"), "engines.sleeve_b_usdjpy_sell_touch025", errors)
-    frequency = _as_mapping(engines.get("frequency_body015"), "engines.frequency_body015", errors)
-    donchian = _as_mapping(engines.get("stage10d_donchian"), "engines.stage10d_donchian", errors)
+    validated_engines: dict[str, Mapping[str, Any]] = {}
+    for engine_id in EXPECTED_ENGINE_IDS:
+        validated_engines[engine_id] = _as_mapping(
+            engines.get(engine_id),
+            f"engines.{engine_id}",
+            errors,
+        )
+        _validate_pinned_identity(engine_id, validated_engines[engine_id], errors)
 
-    _validate_control(control, errors)
-    _validate_d1_shadow(d1_shadow, errors)
-    _validate_sleeve_b(sleeve_b, errors)
-    _validate_frequency(frequency, errors)
-    _validate_donchian(donchian, errors)
+    _validate_control(validated_engines["stage10c_v4430_control"], errors)
+    _validate_d1_shadow(validated_engines["stage10c_v4431_d1_shadow"], errors)
+    _validate_sleeve_b(validated_engines["sleeve_b_usdjpy_sell_touch025"], errors)
+    _validate_frequency(validated_engines["frequency_body015"], errors)
+    _validate_donchian(validated_engines["stage10d_donchian"], errors)
     _validate_isolation(payload, engines, errors)
 
     for engine_id, engine in engines.items():
