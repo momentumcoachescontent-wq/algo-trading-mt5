@@ -29,11 +29,16 @@ dist-ssr
 !.dev.vars.example
 .env*
 !.env.example
+
+# Local research data and broker exports
+# Raw/canonical MT5 exports remain local and are identified by governed checksums.
 data/
+exports/
+python/data/
+
 **/__pycache__/
 *.pyc
 *.pyo
-python/data/
 files (1).zip
 files (1)/
 .env

@@ -7,6 +7,7 @@
 | Stage10B | Controlled frequency pilot | Closed; not promoted |
 | Stage10C | USDJPY-first governance reset and live core baseline | Active core; unchanged by Stage10D |
 | Stage10D | Momentum continuation challenger research | Phase 1 CLOSED / PASS; Phase 2 awaits explicit authorization |
+| Demo Acceleration | Isolated demo evidence acceleration | Stage 1 CLOSED / PASS; Stage 2 observability repair next |
 
 ## Stage10C documents
 
@@ -30,14 +31,53 @@
 - `STAGE10D_PHASE1_LOCAL_FORWARD_RUNBOOK.md`
 - `../adr/ADR-016-stage10d-donchian-breakout-challenger.md`
 
+## Demo Acceleration documents
+
+- `DEMO_ACCELERATION_PROGRAM_CHARTER.md`
+- `DEMO_ACCELERATION_STAGE1_CLOSURE.md`
+- `../adr/ADR-017-demo-acceleration-governance.md`
+- `../../configs/demo_acceleration/demo_acceleration_v1.json`
+
 ## Program relationship
 
 ```text
-Stage10C = production core and governance baseline
-Stage10D = isolated challenger research
+Stage10C = demo execution control and governance baseline
+Stage10D = isolated continuation challenger research
+Demo Acceleration = isolated control, shadow and experimental evidence program
 ```
 
-Stage10D does not replace or relax Stage10C. It investigates a separate continuation hypothesis.
+Demo Acceleration does not replace or relax Stage10C. It preserves the v4.43.0 control, keeps v4.43.1 order-disabled, inherits the Stage10A Sleeve B gate, and keeps Stage10D offline until its full gate passes.
+
+## Demo Acceleration Stage 1 closure
+
+Stage 1 closed with:
+
+```text
+contract_id=57d4efc4cf332d46c4cad9a5
+PASS_GOVERNANCE_CONTRACT
+9/9 unit tests PASS
+Demo Acceleration CI PASS
+Stage10D Phase 1 regression PASS
+local worktree clean
+exports/ preserved and ignored
+activation_authorized=false
+production_capital_authorized=false
+```
+
+Stage 1 defined machine-readable governance only:
+
+```text
+control risk and parameters frozen
+challenger-specific gates preserved
+account slots reserved
+strategy identity and Magic reserved
+portfolio risk envelope recorded
+future implementation branches isolated
+```
+
+It did not activate Sleeve B, Frequency body015 or Donchian, and did not change an EA, Worker, Supabase, MT5 input or capital authorization.
+
+The next authorized Demo Acceleration activity is Stage 2: minimum Stage10C observability repair on branch `agent/stage10c-observability-repair`.
 
 ## F5A.6 Pilar C disposition
 
