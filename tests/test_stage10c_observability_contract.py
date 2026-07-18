@@ -62,6 +62,30 @@ class Stage10CObservabilityContractTests(unittest.TestCase):
         ):
             self.assertRegex(self.sql, rf"\b{re.escape(column)}\b")
 
+    def test_decision_constraint_preserves_legacy_and_allows_normalized_values(self) -> None:
+        drop_marker = "DROP CONSTRAINT IF EXISTS signal_evals_decision_check"
+        add_marker = "ADD CONSTRAINT signal_evals_decision_check CHECK"
+        normalize_marker = "UPDATE public.signal_evals\nSET decision = CASE"
+        self.assertIn(drop_marker, self.sql)
+        self.assertIn(add_marker, self.sql)
+        self.assertLess(self.sql.index(add_marker), self.sql.index(normalize_marker))
+        for decision in (
+            "SIGNAL",
+            "BLOCKED",
+            "OPENED",
+            "CLOSED",
+            "ERROR",
+            "ENTRY_READY",
+            "ENTRY_READY_REAL_ALLOWED",
+            "ENTRY_READY_SHADOW_ONLY_BLOCKED",
+            "BLOCKED_BY_EXECUTION_SCOPE",
+            "BLOCKED_BY_GOVERNANCE_GUARD",
+            "BLOCKED_BY_TECHNICAL_GUARD",
+            "RAW_SIGNAL",
+            "NO_SIGNAL",
+        ):
+            self.assertIn(f"'{decision}'", self.sql)
+
     def test_legacy_ticket_is_never_reclassified_as_order_or_deal(self) -> None:
         normalized = " ".join(self.sql.lower().split())
         self.assertNotIn("set position_id = ticket", normalized)
@@ -160,6 +184,7 @@ class Stage10CObservabilityContractTests(unittest.TestCase):
         for check_name in (
             "required_columns",
             "required_indexes",
+            "decision_constraint_contract",
             "shadow_entry_not_error",
             "v4430_trade_execution_mode",
             "signal_eval_id_backfill",
