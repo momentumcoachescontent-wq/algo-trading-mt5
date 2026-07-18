@@ -1,8 +1,7 @@
 """Validate the Demo Acceleration governance contract.
 
-This module is intentionally standard-library only. It validates governance and
-identity decisions; it does not activate an EA, change risk, send an order, or write
-to production systems.
+Standard-library only. This module validates governance and identity decisions; it
+cannot activate an EA, change risk, send an order, or write to production systems.
 """
 
 from __future__ import annotations
@@ -14,13 +13,6 @@ from pathlib import Path
 from typing import Any, Mapping
 
 PROGRAM_VERSION = "demo-acceleration-governance-v1"
-EXPECTED_ENGINE_IDS = {
-    "stage10c_v4430_control",
-    "stage10c_v4431_d1_shadow",
-    "sleeve_b_usdjpy_sell_touch025",
-    "frequency_body015",
-    "stage10d_donchian",
-}
 EXPECTED_ENGINE_IDENTITIES: dict[str, dict[str, Any]] = {
     "stage10c_v4430_control": {
         "strategy_variant": "stage10c_v4430_usdjpy_control",
@@ -53,6 +45,7 @@ EXPECTED_ENGINE_IDENTITIES: dict[str, dict[str, Any]] = {
         "guard_version": "stage10d_research_gate_v1",
     },
 }
+EXPECTED_ENGINE_IDS = set(EXPECTED_ENGINE_IDENTITIES)
 REQUIRED_IDENTITY_FIELDS = {
     "experiment_id",
     "strategy_variant",
@@ -144,11 +137,14 @@ def _as_mapping(value: Any, path: str, errors: list[str]) -> Mapping[str, Any]:
     return value
 
 
-def _as_list(value: Any, path: str, errors: list[str]) -> list[Any]:
+def _as_string_set(value: Any, path: str, errors: list[str]) -> set[str]:
     if not isinstance(value, list):
         errors.append(f"{path} must be a list")
-        return []
-    return value
+        return set()
+    if any(not isinstance(item, str) for item in value):
+        errors.append(f"{path} must contain only strings")
+        return set()
+    return set(value)
 
 
 def _require_equal(observed: Any, expected: Any, path: str, errors: list[str]) -> None:
@@ -164,7 +160,7 @@ def _require_false(observed: Any, path: str, errors: list[str]) -> None:
     _require_equal(observed, False, path, errors)
 
 
-def _validate_global_contract(payload: Mapping[str, Any], errors: list[str]) -> None:
+def _validate_global(payload: Mapping[str, Any], errors: list[str]) -> None:
     _require_equal(payload.get("program_version"), PROGRAM_VERSION, "program_version", errors)
     _require_equal(payload.get("program_status"), "GOVERNANCE_ONLY", "program_status", errors)
     _require_equal(payload.get("environment"), "DEMO", "environment", errors)
@@ -176,18 +172,20 @@ def _validate_global_contract(payload: Mapping[str, Any], errors: list[str]) -> 
     )
     _require_equal(payload.get("symbol_scope"), ["USDJPY"], "symbol_scope", errors)
 
-    identity_fields = set(
-        _as_list(payload.get("required_identity_fields"), "required_identity_fields", errors)
-    )
-    if identity_fields != REQUIRED_IDENTITY_FIELDS:
+    if _as_string_set(
+        payload.get("required_identity_fields"),
+        "required_identity_fields",
+        errors,
+    ) != REQUIRED_IDENTITY_FIELDS:
         errors.append(
             "required_identity_fields must exactly preserve the approved audit identity"
         )
 
-    exit_criteria = set(
-        _as_list(payload.get("stage1_exit_criteria"), "stage1_exit_criteria", errors)
-    )
-    if exit_criteria != REQUIRED_STAGE1_EXIT_CRITERIA:
+    if _as_string_set(
+        payload.get("stage1_exit_criteria"),
+        "stage1_exit_criteria",
+        errors,
+    ) != REQUIRED_STAGE1_EXIT_CRITERIA:
         errors.append(
             "stage1_exit_criteria must exactly match the approved Stage 1 closure set"
         )
@@ -205,7 +203,7 @@ def _validate_global_contract(payload: Mapping[str, Any], errors: list[str]) -> 
         _require_equal(limits.get(key), expected, f"global_risk_limits.{key}", errors)
 
 
-def _validate_pinned_identity(
+def _validate_common_engine(
     engine_id: str,
     engine: Mapping[str, Any],
     errors: list[str],
@@ -213,6 +211,11 @@ def _validate_pinned_identity(
     prefix = f"engines.{engine_id}"
     for field, expected in EXPECTED_ENGINE_IDENTITIES[engine_id].items():
         _require_equal(engine.get(field), expected, f"{prefix}.{field}", errors)
+    _require_false(
+        engine.get("activation_in_this_stage"),
+        f"{prefix}.activation_in_this_stage",
+        errors,
+    )
 
 
 def _validate_control(engine: Mapping[str, Any], errors: list[str]) -> None:
@@ -224,19 +227,20 @@ def _validate_control(engine: Mapping[str, Any], errors: list[str]) -> None:
         f"{prefix}.lifecycle_status",
         errors,
     )
-    _require_false(engine.get("activation_in_this_stage"), f"{prefix}.activation_in_this_stage", errors)
     _require_equal(engine.get("account_slot"), "DEMO_A", f"{prefix}.account_slot", errors)
     _require_equal(engine.get("initial_risk_pct"), 0.25, f"{prefix}.initial_risk_pct", errors)
     _require_equal(engine.get("max_risk_pct"), 0.25, f"{prefix}.max_risk_pct", errors)
     _require_true(engine.get("parameters_frozen"), f"{prefix}.parameters_frozen", errors)
-    frozen_fields = _as_list(engine.get("frozen_fields"), f"{prefix}.frozen_fields", errors)
-    if set(frozen_fields) != REQUIRED_CONTROL_FROZEN_FIELDS:
+    if _as_string_set(
+        engine.get("frozen_fields"),
+        f"{prefix}.frozen_fields",
+        errors,
+    ) != REQUIRED_CONTROL_FROZEN_FIELDS:
         errors.append(f"{prefix}.frozen_fields must preserve the complete control parameter set")
 
 
 def _validate_d1_shadow(engine: Mapping[str, Any], errors: list[str]) -> None:
     prefix = "engines.stage10c_v4431_d1_shadow"
-    _require_false(engine.get("activation_in_this_stage"), f"{prefix}.activation_in_this_stage", errors)
     _require_false(engine.get("order_send_allowed"), f"{prefix}.order_send_allowed", errors)
     _require_equal(engine.get("initial_risk_pct"), 0.0, f"{prefix}.initial_risk_pct", errors)
     _require_equal(engine.get("max_risk_pct"), 0.0, f"{prefix}.max_risk_pct", errors)
@@ -261,7 +265,6 @@ def _validate_sleeve_b(engine: Mapping[str, Any], errors: list[str]) -> None:
         f"{prefix}.lifecycle_status",
         errors,
     )
-    _require_false(engine.get("activation_in_this_stage"), f"{prefix}.activation_in_this_stage", errors)
     _require_false(engine.get("order_send_allowed", False), f"{prefix}.order_send_allowed", errors)
     _require_equal(engine.get("account_slot"), "DEMO_B", f"{prefix}.account_slot", errors)
     _require_equal(engine.get("direction_scope"), "SELL", f"{prefix}.direction_scope", errors)
@@ -275,16 +278,16 @@ def _validate_sleeve_b(engine: Mapping[str, Any], errors: list[str]) -> None:
     )
 
     gate = _as_mapping(engine.get("continuity_gate"), f"{prefix}.continuity_gate", errors)
-    _require_equal(gate.get("gate_owner"), "STAGE10A", f"{prefix}.continuity_gate.gate_owner", errors)
-    _require_false(
-        gate.get("gate_replacement_allowed"),
-        f"{prefix}.continuity_gate.gate_replacement_allowed",
-        errors,
-    )
-    _require_equal(gate.get("minimum_forward_weeks"), 16, f"{prefix}.continuity_gate.minimum_forward_weeks", errors)
-    _require_equal(gate.get("minimum_trades"), 30, f"{prefix}.continuity_gate.minimum_trades", errors)
-    _require_equal(gate.get("median_r_strictly_greater_than"), 0.0, f"{prefix}.continuity_gate.median_r_strictly_greater_than", errors)
-    _require_equal(gate.get("top3_share_strictly_less_than"), 0.4, f"{prefix}.continuity_gate.top3_share_strictly_less_than", errors)
+    expected_gate = {
+        "gate_owner": "STAGE10A",
+        "gate_replacement_allowed": False,
+        "minimum_forward_weeks": 16,
+        "minimum_trades": 30,
+        "median_r_strictly_greater_than": 0.0,
+        "top3_share_strictly_less_than": 0.4,
+    }
+    for key, expected in expected_gate.items():
+        _require_equal(gate.get(key), expected, f"{prefix}.continuity_gate.{key}", errors)
 
 
 def _validate_frequency(engine: Mapping[str, Any], errors: list[str]) -> None:
@@ -295,7 +298,6 @@ def _validate_frequency(engine: Mapping[str, Any], errors: list[str]) -> None:
         f"{prefix}.lifecycle_status",
         errors,
     )
-    _require_false(engine.get("activation_in_this_stage"), f"{prefix}.activation_in_this_stage", errors)
     _require_false(engine.get("order_send_allowed", False), f"{prefix}.order_send_allowed", errors)
     _require_equal(engine.get("account_slot"), "DEMO_C", f"{prefix}.account_slot", errors)
     _require_equal(engine.get("initial_risk_pct"), 0.5, f"{prefix}.initial_risk_pct", errors)
@@ -312,12 +314,11 @@ def _validate_frequency(engine: Mapping[str, Any], errors: list[str]) -> None:
     _require_equal(body_delta.get("control"), 0.25, f"{prefix}.parameter_delta.body_c1_min.control", errors)
     _require_equal(body_delta.get("challenger"), 0.15, f"{prefix}.parameter_delta.body_c1_min.challenger", errors)
 
-    unchanged_fields = _as_list(
+    if _as_string_set(
         engine.get("required_unchanged_fields"),
         f"{prefix}.required_unchanged_fields",
         errors,
-    )
-    if set(unchanged_fields) != REQUIRED_FREQUENCY_UNCHANGED_FIELDS:
+    ) != REQUIRED_FREQUENCY_UNCHANGED_FIELDS:
         errors.append(
             f"{prefix}.required_unchanged_fields must preserve every non-body causal field"
         )
@@ -360,7 +361,6 @@ def _validate_donchian(engine: Mapping[str, Any], errors: list[str]) -> None:
         f"{prefix}.lifecycle_status",
         errors,
     )
-    _require_false(engine.get("activation_in_this_stage"), f"{prefix}.activation_in_this_stage", errors)
     _require_false(engine.get("order_send_allowed"), f"{prefix}.order_send_allowed", errors)
     _require_equal(engine.get("initial_risk_pct"), 0.0, f"{prefix}.initial_risk_pct", errors)
     _require_equal(engine.get("max_risk_pct"), 0.0, f"{prefix}.max_risk_pct", errors)
@@ -372,19 +372,18 @@ def _validate_donchian(engine: Mapping[str, Any], errors: list[str]) -> None:
     )
 
     gate = _as_mapping(engine.get("entry_gate"), f"{prefix}.entry_gate", errors)
-    _require_equal(gate.get("gate_owner"), "STAGE10D_APPROVED_2026_07_10", f"{prefix}.entry_gate.gate_owner", errors)
-    _require_false(gate.get("gate_replacement_allowed"), f"{prefix}.entry_gate.gate_replacement_allowed", errors)
-    _require_equal(gate.get("minimum_trades"), 80, f"{prefix}.entry_gate.minimum_trades", errors)
-    _require_equal(gate.get("minimum_profit_factor_strictly_greater_than"), 1.15, f"{prefix}.entry_gate.minimum_profit_factor_strictly_greater_than", errors)
-    _require_true(gate.get("out_of_sample_required"), f"{prefix}.entry_gate.out_of_sample_required", errors)
-    _require_equal(gate.get("mandatory_condition_count"), 4, f"{prefix}.entry_gate.mandatory_condition_count", errors)
-    _require_equal(
-        gate.get("mandatory_conditions_source"),
-        "APPROVED_2026_07_10_DECISION_AND_STAGE10D_CHARTER",
-        f"{prefix}.entry_gate.mandatory_conditions_source",
-        errors,
-    )
-    _require_true(gate.get("all_mandatory_conditions_required"), f"{prefix}.entry_gate.all_mandatory_conditions_required", errors)
+    expected_gate = {
+        "gate_owner": "STAGE10D_APPROVED_2026_07_10",
+        "gate_replacement_allowed": False,
+        "minimum_trades": 80,
+        "minimum_profit_factor_strictly_greater_than": 1.15,
+        "out_of_sample_required": True,
+        "mandatory_condition_count": 4,
+        "mandatory_conditions_source": "APPROVED_2026_07_10_DECISION_AND_STAGE10D_CHARTER",
+        "all_mandatory_conditions_required": True,
+    }
+    for key, expected in expected_gate.items():
+        _require_equal(gate.get(key), expected, f"{prefix}.entry_gate.{key}", errors)
 
     data = _as_mapping(engine.get("canonical_data"), f"{prefix}.canonical_data", errors)
     _require_equal(data.get("source"), "MetaQuotes-Demo MT5 CSV", f"{prefix}.canonical_data.source", errors)
@@ -398,21 +397,21 @@ def _validate_isolation(
     errors: list[str],
 ) -> None:
     isolation = _as_mapping(payload.get("isolation_rules"), "isolation_rules", errors)
-    _require_true(isolation.get("separate_accounts_preferred"), "isolation_rules.separate_accounts_preferred", errors)
-    _require_false(
-        isolation.get("shared_netting_account_for_experimental_engines_allowed"),
-        "isolation_rules.shared_netting_account_for_experimental_engines_allowed",
-        errors,
-    )
-    _require_true(isolation.get("unique_magic_numbers_required"), "isolation_rules.unique_magic_numbers_required", errors)
-    _require_true(isolation.get("unique_strategy_variants_required"), "isolation_rules.unique_strategy_variants_required", errors)
-    _require_false(isolation.get("cross_engine_position_adoption_allowed"), "isolation_rules.cross_engine_position_adoption_allowed", errors)
-    _require_false(isolation.get("manual_discretionary_intervention_allowed"), "isolation_rules.manual_discretionary_intervention_allowed", errors)
+    expected_isolation = {
+        "separate_accounts_preferred": True,
+        "shared_netting_account_for_experimental_engines_allowed": False,
+        "unique_magic_numbers_required": True,
+        "unique_strategy_variants_required": True,
+        "cross_engine_position_adoption_allowed": False,
+        "manual_discretionary_intervention_allowed": False,
+    }
+    for key, expected in expected_isolation.items():
+        _require_equal(isolation.get(key), expected, f"isolation_rules.{key}", errors)
 
     magic_numbers = [
         engine.get("magic_number")
         for engine in engines.values()
-        if isinstance(engine, Mapping)
+        if isinstance(engine, Mapping) and engine.get("magic_number") is not None
     ]
     if len(magic_numbers) != len(set(magic_numbers)):
         errors.append("every engine must have a unique magic_number")
@@ -420,7 +419,7 @@ def _validate_isolation(
     variants = [
         engine.get("strategy_variant")
         for engine in engines.values()
-        if isinstance(engine, Mapping)
+        if isinstance(engine, Mapping) and engine.get("strategy_variant") is not None
     ]
     if len(variants) != len(set(variants)):
         errors.append("every engine must have a unique strategy_variant")
@@ -450,31 +449,24 @@ def _validate_isolation(
 
 def validate_contract(payload: Mapping[str, Any]) -> ContractValidation:
     errors: list[str] = []
-    _validate_global_contract(payload, errors)
+    _validate_global(payload, errors)
 
     engines = _as_mapping(payload.get("engines"), "engines", errors)
     if set(engines) != EXPECTED_ENGINE_IDS:
         errors.append("engines must exactly match the approved control and challenger set")
 
-    validated_engines: dict[str, Mapping[str, Any]] = {}
+    validated: dict[str, Mapping[str, Any]] = {}
     for engine_id in EXPECTED_ENGINE_IDS:
-        validated_engines[engine_id] = _as_mapping(
-            engines.get(engine_id),
-            f"engines.{engine_id}",
-            errors,
-        )
-        _validate_pinned_identity(engine_id, validated_engines[engine_id], errors)
+        engine = _as_mapping(engines.get(engine_id), f"engines.{engine_id}", errors)
+        validated[engine_id] = engine
+        _validate_common_engine(engine_id, engine, errors)
 
-    _validate_control(validated_engines["stage10c_v4430_control"], errors)
-    _validate_d1_shadow(validated_engines["stage10c_v4431_d1_shadow"], errors)
-    _validate_sleeve_b(validated_engines["sleeve_b_usdjpy_sell_touch025"], errors)
-    _validate_frequency(validated_engines["frequency_body015"], errors)
-    _validate_donchian(validated_engines["stage10d_donchian"], errors)
+    _validate_control(validated["stage10c_v4430_control"], errors)
+    _validate_d1_shadow(validated["stage10c_v4431_d1_shadow"], errors)
+    _validate_sleeve_b(validated["sleeve_b_usdjpy_sell_touch025"], errors)
+    _validate_frequency(validated["frequency_body015"], errors)
+    _validate_donchian(validated["stage10d_donchian"], errors)
     _validate_isolation(payload, engines, errors)
-
-    for engine_id, engine in engines.items():
-        if isinstance(engine, Mapping) and engine.get("activation_in_this_stage") is not False:
-            errors.append(f"engines.{engine_id}.activation_in_this_stage must remain false")
 
     planned_execution_count = sum(
         1
