@@ -9,6 +9,9 @@ const {
   normalizeTradeIdentity,
   resolveSignalEvalId,
 } = require("../.tmp-test/observability.js");
+const {
+  chooseOpenTradeCandidate,
+} = require("../.tmp-test/tradeCandidate.js");
 
 test("valid shadow entry is not labeled ERROR", () => {
   const payload = {
@@ -90,6 +93,21 @@ test("nested execution scope JSON string is accepted", () => {
   assert.equal(scope.policyName, "stage10c");
 });
 
+test("signal_eval_id uses the canonical transparent contract", () => {
+  const payload = {
+    symbol: "usdjpy",
+    ea_version: "V4.43.1",
+    phase: "Stage10C-D1ContextIntegrity",
+    eval_time: "2026-07-15T12:00:00.000Z",
+    direction: "BUY",
+    entry_price: "162.29900000",
+  };
+  assert.equal(
+    resolveSignalEvalId(payload),
+    "stage10c-sig-v1|USDJPY|v4.43.1|stage10c-d1contextintegrity|2026-07-15T12:00:00Z|buy|162.299",
+  );
+});
+
 test("signal_eval_id is deterministic and retry-safe", () => {
   const payload = {
     symbol: "USDJPY",
@@ -100,7 +118,7 @@ test("signal_eval_id is deterministic and retry-safe", () => {
     entry_price: 162.299,
   };
   assert.equal(resolveSignalEvalId(payload), resolveSignalEvalId({ ...payload }));
-  assert.match(resolveSignalEvalId(payload), /^stage10c-sig-[0-9a-f]{16}$/);
+  assert.match(resolveSignalEvalId(payload), /^stage10c-sig-v1\|/);
 });
 
 test("provided signal_eval_id is preserved", () => {
@@ -143,7 +161,7 @@ test("actual v4430 open ticket is treated as position, not invented order", () =
   assert.equal(identity.ticket, 152340804622);
   assert.equal(identity.positionId, 152340804622);
   assert.equal(identity.orderTicket, null);
-  assert.match(identity.signalEvalId, /^stage10c-sig-[0-9a-f]{16}$/);
+  assert.match(identity.signalEvalId, /^stage10c-sig-v1\|/);
   assert.equal(identity.linkStatus, "LINKED_SIGNAL_POSITION_MISSING_ORDER_TICKET");
 });
 
@@ -157,7 +175,7 @@ test("signal and trade payloads derive the same correlation id", () => {
   };
   const signalId = resolveSignalEvalId({
     ...common,
-    eval_time: "2026-07-15T12:00:00Z",
+    eval_time: "2026-07-15T12:00:00.000Z",
     bar_time_h4: "2026-07-15T08:00:00Z",
   });
   const trade = normalizeTradeIdentity(
@@ -193,6 +211,33 @@ test("legacy open ticket is never copied into position_id", () => {
   assert.equal(identity.orderTicket, 123);
   assert.equal(identity.positionId, null);
   assert.equal(identity.linkStatus, "LEGACY_OPEN_IDENTITY_INCOMPLETE");
+});
+
+test("single candidate with explicit mode mismatch is rejected", () => {
+  const candidate = chooseOpenTradeCandidate(
+    [{ id: 1, execution_mode: "REAL", strategy_variant: "control" }],
+    "SHADOW_ONLY",
+    "control",
+  );
+  assert.equal(candidate, null);
+});
+
+test("single candidate with explicit variant mismatch is rejected", () => {
+  const candidate = chooseOpenTradeCandidate(
+    [{ id: 1, execution_mode: "REAL", strategy_variant: "control" }],
+    "REAL",
+    "challenger",
+  );
+  assert.equal(candidate, null);
+});
+
+test("single legacy candidate with missing metadata is accepted", () => {
+  const candidate = chooseOpenTradeCandidate(
+    [{ id: 1, execution_mode: null, strategy_variant: null }],
+    "REAL",
+    "control",
+  );
+  assert.equal(candidate.id, 1);
 });
 
 test("normalization never authorizes an order", () => {
