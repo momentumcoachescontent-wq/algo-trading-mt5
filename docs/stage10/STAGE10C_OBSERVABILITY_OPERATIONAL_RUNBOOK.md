@@ -2,7 +2,7 @@
 
 ## Status
 
-**CHECKPOINT A READY — NOT YET EXECUTED**
+**CHECKPOINT A READY / CI PASS — NOT YET EXECUTED**
 
 This runbook applies and validates Supabase migration `006_stage10c_observability.sql` before Worker v3.3.0 is deployed.
 
@@ -33,7 +33,7 @@ Migration `006` is transactional, idempotent, and uses bounded lock and statemen
 
 ```text
 branch = agent/stage10c-observability-repair
-minimum head = c5f5fe2
+minimum head = 96aa790
 worktree = clean
 ```
 
