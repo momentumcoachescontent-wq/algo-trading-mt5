@@ -7,6 +7,7 @@
 | Stage10B | Controlled frequency pilot | Closed; not promoted |
 | Stage10C | USDJPY-first governance reset and live core baseline | Active core; unchanged by Stage10D |
 | Stage10D | Momentum continuation challenger research | Phase 1 CLOSED / PASS; Phase 2 awaits explicit authorization |
+| Demo Acceleration | Isolated demo evidence acceleration | Stage 1 governance implemented; awaiting validation |
 
 ## Stage10C documents
 
@@ -30,14 +31,38 @@
 - `STAGE10D_PHASE1_LOCAL_FORWARD_RUNBOOK.md`
 - `../adr/ADR-016-stage10d-donchian-breakout-challenger.md`
 
+## Demo Acceleration documents
+
+- `DEMO_ACCELERATION_PROGRAM_CHARTER.md`
+- `../adr/ADR-017-demo-acceleration-governance.md`
+- `../../configs/demo_acceleration/demo_acceleration_v1.json`
+
 ## Program relationship
 
 ```text
-Stage10C = production core and governance baseline
-Stage10D = isolated challenger research
+Stage10C = demo execution control and governance baseline
+Stage10D = isolated continuation challenger research
+Demo Acceleration = isolated control, shadow and experimental evidence program
 ```
 
-Stage10D does not replace or relax Stage10C. It investigates a separate continuation hypothesis.
+Demo Acceleration does not replace or relax Stage10C. It preserves the v4.43.0 control, keeps v4.43.1 order-disabled, inherits the Stage10A Sleeve B gate, and keeps Stage10D offline until its full gate passes.
+
+## Demo Acceleration Stage 1 boundary
+
+Stage 1 defines machine-readable governance only:
+
+```text
+control risk and parameters frozen
+challenger-specific gates preserved
+account slots reserved
+strategy identity and Magic reserved
+portfolio risk envelope recorded
+future implementation branches isolated
+activation_authorized=false
+production_capital_authorized=false
+```
+
+It does not activate Sleeve B, Frequency body015 or Donchian, and does not change an EA, Worker, Supabase, MT5 input or capital authorization.
 
 ## F5A.6 Pilar C disposition
 
