@@ -6,6 +6,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "infra/supabase/migrations/006_stage10c_observability.sql"
+PREFLIGHT = ROOT / "infra/supabase/validation/006_stage10c_observability_preflight.sql"
+VALIDATION = ROOT / "infra/supabase/validation/006_stage10c_observability_validation.sql"
 WORKER = ROOT / "infra/worker/src/index.ts"
 NORMALIZER = ROOT / "infra/worker/src/observability.ts"
 CANDIDATE = ROOT / "infra/worker/src/tradeCandidate.ts"
@@ -15,6 +17,8 @@ class Stage10CObservabilityContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.sql = MIGRATION.read_text(encoding="utf-8")
+        cls.preflight = PREFLIGHT.read_text(encoding="utf-8")
+        cls.validation = VALIDATION.read_text(encoding="utf-8")
         cls.worker = WORKER.read_text(encoding="utf-8")
         cls.normalizer = NORMALIZER.read_text(encoding="utf-8")
         cls.candidate = CANDIDATE.read_text(encoding="utf-8")
@@ -130,6 +134,51 @@ class Stage10CObservabilityContractTests(unittest.TestCase):
             r"orderSendAllowed\s*:\s*true",
         )
         self.assertIn("ENTRY_READY_SHADOW_ONLY_BLOCKED", self.normalizer)
+
+    def test_operational_preflight_is_read_only(self) -> None:
+        upper = self.preflight.upper()
+        self.assertIn("BEGIN;", upper)
+        self.assertIn("SET TRANSACTION READ ONLY", upper)
+        self.assertIn("ROLLBACK;", upper)
+        self.assertNotRegex(
+            upper,
+            r"\b(INSERT|UPDATE|DELETE|ALTER|DROP|CREATE|TRUNCATE)\b",
+        )
+        self.assertIn("duplicate_open_trade_identity_inventory", self.preflight)
+
+    def test_post_migration_validation_is_read_only(self) -> None:
+        upper = self.validation.upper()
+        self.assertIn("BEGIN;", upper)
+        self.assertIn("SET TRANSACTION READ ONLY", upper)
+        self.assertIn("ROLLBACK;", upper)
+        self.assertNotRegex(
+            upper,
+            r"\b(INSERT|UPDATE|DELETE|ALTER|DROP|CREATE|TRUNCATE)\b",
+        )
+
+    def test_post_migration_validation_covers_mandatory_gates(self) -> None:
+        for check_name in (
+            "required_columns",
+            "required_indexes",
+            "shadow_entry_not_error",
+            "v4430_trade_execution_mode",
+            "signal_eval_id_backfill",
+            "legacy_ticket_not_invented_as_order",
+        ):
+            self.assertIn(f"'{check_name}'", self.validation)
+        self.assertIn("violation_count", self.validation)
+        self.assertIn("THEN 'PASS' ELSE 'FAIL'", self.validation)
+
+    def test_post_migration_validation_includes_reconciliation_inventory(self) -> None:
+        for check_name in (
+            "signal_eval_id_prefix_inventory",
+            "duplicate_signal_eval_id_inventory",
+            "trade_link_status_inventory",
+            "signal_decision_inventory",
+            "execution_mode_inventory",
+            "row_count_snapshot",
+        ):
+            self.assertIn(f"'{check_name}'", self.validation)
 
 
 if __name__ == "__main__":
