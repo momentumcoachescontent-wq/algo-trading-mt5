@@ -10,6 +10,7 @@ on:
       - "docs/adr/ADR-017-demo-acceleration-governance.md"
       - "docs/stage10/DEMO_ACCELERATION_PROGRAM_CHARTER.md"
       - "docs/stage10/README.md"
+      - ".gitignore"
       - ".github/workflows/demo-acceleration-governance-tests.yml"
   workflow_dispatch:
 
