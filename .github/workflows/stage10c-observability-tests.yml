@@ -39,6 +39,10 @@ jobs:
         working-directory: infra/worker
         run: npm ci
 
+      - name: Audit Worker production dependencies
+        working-directory: infra/worker
+        run: npm audit --omit=dev
+
       - name: Run observability semantic tests
         working-directory: infra/worker
         run: npm test
