@@ -14,7 +14,9 @@ import {
   toNumber,
   toText,
 } from "./observability";
+import { chooseOpenTradeCandidate } from "./tradeCandidate";
 import type { Payload, TradeEvent } from "./observability";
+import type { OpenTradeCandidate } from "./tradeCandidate";
 
 type EventType =
   | "trade_open"
@@ -44,12 +46,6 @@ interface Env {
 interface ValidationResult {
   ok: boolean;
   error?: string;
-}
-
-interface OpenTradeCandidate {
-  id: string | number;
-  execution_mode?: string | null;
-  strategy_variant?: string | null;
 }
 
 function makeRequestId(): string {
@@ -606,23 +602,6 @@ async function findOpenTradeCandidates(
   return Array.isArray(rows) ? (rows as OpenTradeCandidate[]) : [];
 }
 
-function chooseSingleCandidate(
-  candidates: OpenTradeCandidate[],
-  executionMode: string | null,
-  strategyVariant: string | null,
-): OpenTradeCandidate | null {
-  if (candidates.length === 0) return null;
-  const exact = candidates.filter((candidate) => {
-    const modeMatches = !executionMode || candidate.execution_mode === executionMode;
-    const variantMatches = !strategyVariant || candidate.strategy_variant === strategyVariant;
-    return modeMatches && variantMatches;
-  });
-  if (exact.length === 1) return exact[0];
-  if (exact.length > 1) throw new Error("Ambiguous open-trade link: multiple exact candidates");
-  if (candidates.length === 1) return candidates[0]; // legacy row without new metadata
-  throw new Error("Ambiguous open-trade link: multiple legacy candidates");
-}
-
 async function patchSingleOpenTrade(
   supabaseUrl: string,
   key: string,
@@ -640,7 +619,11 @@ async function patchSingleOpenTrade(
     symbol,
     requestId,
   );
-  const candidate = chooseSingleCandidate(candidates, executionMode, strategyVariant);
+  const candidate = chooseOpenTradeCandidate(
+    candidates,
+    executionMode,
+    strategyVariant,
+  );
   if (!candidate) return { updated: false };
 
   const url = `${supabaseUrl}/rest/v1/trades?id=eq.${encodeURIComponent(
