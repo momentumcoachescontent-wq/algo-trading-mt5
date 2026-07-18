@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "infra/supabase/migrations/006_stage10c_observability.sql"
 WORKER = ROOT / "infra/worker/src/index.ts"
 NORMALIZER = ROOT / "infra/worker/src/observability.ts"
+CANDIDATE = ROOT / "infra/worker/src/tradeCandidate.ts"
 
 
 class Stage10CObservabilityContractTests(unittest.TestCase):
@@ -16,6 +17,7 @@ class Stage10CObservabilityContractTests(unittest.TestCase):
         cls.sql = MIGRATION.read_text(encoding="utf-8")
         cls.worker = WORKER.read_text(encoding="utf-8")
         cls.normalizer = NORMALIZER.read_text(encoding="utf-8")
+        cls.candidate = CANDIDATE.read_text(encoding="utf-8")
 
     def test_migration_is_idempotent_and_transactional(self) -> None:
         self.assertIn("BEGIN;", self.sql)
@@ -76,6 +78,15 @@ class Stage10CObservabilityContractTests(unittest.TestCase):
         self.assertIn("UPPER(COALESCE(action, '')) LIKE 'ENTRY_READY%'", self.sql)
         self.assertIn("would_have_traded", self.sql)
 
+    def test_worker_and_sql_share_canonical_signal_id_contract(self) -> None:
+        prefix = "stage10c-sig-v1|"
+        self.assertIn(prefix, self.normalizer)
+        self.assertIn(prefix, self.sql)
+        self.assertNotIn("fnv1a64", self.normalizer)
+        self.assertNotIn("MD5(", self.sql)
+        self.assertIn("YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"", self.sql)
+        self.assertIn("toFixed(8)", self.normalizer)
+
     def test_worker_persists_separate_reasons_and_identities(self) -> None:
         for field in (
             "primary_signal_reason",
@@ -91,9 +102,14 @@ class Stage10CObservabilityContractTests(unittest.TestCase):
 
     def test_worker_does_not_patch_by_position_id_directly(self) -> None:
         self.assertIn("findOpenTradeCandidates", self.worker)
-        self.assertIn("chooseSingleCandidate", self.worker)
+        self.assertIn("chooseOpenTradeCandidate", self.worker)
         self.assertIn("id=eq.", self.worker)
         self.assertNotIn("trades?position_id=eq.", self.worker)
+
+    def test_explicit_candidate_metadata_mismatch_is_rejected(self) -> None:
+        self.assertIn("modeMismatch", self.candidate)
+        self.assertIn("variantMismatch", self.candidate)
+        self.assertIn("if (modeMismatch || variantMismatch) return null", self.candidate)
 
     def test_signal_insert_failure_is_not_reported_as_success(self) -> None:
         self.assertIn(
