@@ -33,7 +33,7 @@ Migration `006` is transactional, idempotent, and uses bounded lock and statemen
 
 ```text
 branch = agent/stage10c-observability-repair
-minimum head = 40072ec
+minimum head = c5f5fe2
 worktree = clean
 ```
 
