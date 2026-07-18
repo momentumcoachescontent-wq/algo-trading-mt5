@@ -7,7 +7,7 @@
 | Stage10B | Controlled frequency pilot | Closed; not promoted |
 | Stage10C | USDJPY-first governance reset and live core baseline | Active demo control; strategy unchanged |
 | Stage10D | Momentum continuation challenger research | Phase 1 CLOSED / PASS; Phase 2 remains isolated offline research |
-| Demo Acceleration | Isolated demo evidence acceleration | Stage 1 CLOSED / PASS; Stage 2 observability repair implemented, awaiting validation |
+| Demo Acceleration | Isolated demo evidence acceleration | Stage 1 CLOSED / PASS; Stage 2 code validated, operational migration checkpoint pending |
 
 ## Stage10C documents
 
@@ -18,6 +18,7 @@
 - `STAGE10C_IMPLEMENTATION_READINESS_PLAN.md`
 - `STAGE10C_MASTER_DESIGN_CLOSURE.md`
 - `STAGE10C_OBSERVABILITY_REPAIR.md`
+- `STAGE10C_OBSERVABILITY_OPERATIONAL_RUNBOOK.md`
 - `STAGE10C_SUPABASE_DASHBOARD_PERSISTENCE_DESIGN.md`
 - `STAGE10C_TOUCH_GAP_INSTRUMENTATION.md`
 - `STAGE10C_WORKER_POLICY_DESIGN.md`
@@ -77,18 +78,23 @@ order_ticket, deal_ticket and position_id are distinct
 signal_eval_id supports explicit correlation
 close matching updates one unambiguous row
 failed signal persistence cannot return misleading HTTP 200
+production dependency audit = 0 vulnerabilities
 ```
 
-Implementation paths:
+Implementation and operational paths:
 
 ```text
 infra/worker/src/observability.ts
+infra/worker/src/tradeCandidate.ts
 infra/worker/src/index.ts
 infra/supabase/migrations/006_stage10c_observability.sql
+infra/supabase/validation/006_stage10c_observability_preflight.sql
+infra/supabase/validation/006_stage10c_observability_validation.sql
 docs/stage10/STAGE10C_OBSERVABILITY_REPAIR.md
+docs/stage10/STAGE10C_OBSERVABILITY_OPERATIONAL_RUNBOOK.md
 ```
 
-Stage 2 does not modify any EA or activate a challenger. Migration execution and Worker deployment require a separate user validation checkpoint.
+Stage 2 does not modify any EA or activate a challenger. Code, contracts, dependency security, local validation, and CI are PASS. Migration execution and Worker deployment remain separate operational checkpoints.
 
 ## F5A.6 Pilar C disposition
 
