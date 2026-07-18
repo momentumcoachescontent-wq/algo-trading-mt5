@@ -88,16 +88,25 @@ The current v4.43.0 position can therefore achieve signal–position correlation
 
 ## Signal correlation
 
-Every signal evaluation receives `signal_eval_id`:
+Every signal evaluation receives a transparent canonical `signal_eval_id`:
 
-- an explicit EA-provided ID is preserved;
-- otherwise the Worker derives a deterministic non-cryptographic correlation ID;
-- the canonical identity uses symbol, EA version, strategy variant or phase, evaluation/open time, direction, and entry price;
-- Stage10C `eval_time` and `trade_open.open_time` represent the same entry instant, allowing both payloads to derive the same ID;
-- retries of the same payload resolve to the same ID;
-- the migration adds an index but does not impose a foreign key over incomplete historical evidence.
+```text
+stage10c-sig-v1|symbol|ea_version|strategy_variant|entry_time|direction|entry_price
+```
 
-For historical rows, the migration creates legacy IDs and links only exact, unique matches by:
+Worker and SQL use the same rules:
+
+- symbol is uppercase;
+- version and strategy/phase are lowercase;
+- timestamps are UTC with second precision;
+- BUY/SELL are normalized to lowercase;
+- entry price is rounded to eight decimals and trailing zeros are removed;
+- missing values use explicit fallback tokens;
+- an explicit EA-provided ID is preserved.
+
+The current Stage10C `eval_time` and `trade_open.open_time` represent the same entry instant, allowing signal and position payloads to derive the same ID even when `trade_open` reaches the Worker first.
+
+For historical rows, the migration generates the same canonical format and links only exact, unique matches by:
 
 ```text
 symbol
@@ -107,7 +116,7 @@ eval_time = open_time
 entry_price = open_price
 ```
 
-Ambiguous or missing historical links remain explicit rather than inferred.
+Ambiguous or missing historical links remain explicit rather than inferred. No foreign key is imposed over incomplete historical evidence.
 
 ## Safe close matching
 
@@ -117,10 +126,11 @@ The repaired flow is:
 
 1. Query open candidates by explicit `position_id` and symbol.
 2. Prefer an exact `execution_mode` and `strategy_variant` match.
-3. Accept one unique legacy candidate when no exact metadata exists.
-4. Reject ambiguous matches.
-5. Patch exactly one row by database `id`.
-6. If no candidate exists, persist a fallback close with `link_status=FALLBACK_UNMATCHED_CLOSE`.
+3. Reject any candidate with explicitly conflicting mode or strategy metadata, even when it is the only candidate.
+4. Accept one unique legacy candidate only when its missing metadata does not contradict the close payload.
+5. Reject ambiguous matches.
+6. Patch exactly one row by database `id`.
+7. If no compatible candidate exists, persist a fallback close with `link_status=FALLBACK_UNMATCHED_CLOSE`.
 
 A fallback close receives a non-null defensive `open_time` equal to the close timestamp when no original open timestamp is available. This preserves evidence without pretending the link was resolved.
 
@@ -219,8 +229,8 @@ python3 -m unittest tests.test_stage10c_observability_contract -v
 Expected:
 
 ```text
-13 Node tests PASS
-11 Python contract tests PASS
+17 Node tests PASS
+13 Python contract tests PASS
 TypeScript PASS
 ```
 
@@ -236,7 +246,9 @@ valid shadow entry != ERROR = PASS
 execution_mode persistence contract = PASS
 reason separation contract = PASS
 legacy ticket is not misclassified = PASS
+Worker/SQL canonical correlation parity = PASS
 future signal-position correlation = PASS
+explicit candidate metadata mismatch rejected = PASS
 single-row close matching = PASS
 missing order/deal identity remains explicit = PASS
 no EA or strategy change = PASS
