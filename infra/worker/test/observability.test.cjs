@@ -14,9 +14,11 @@ test("valid shadow entry is not labeled ERROR", () => {
   const payload = {
     symbol: "USDJPY",
     ea_version: "v4.43.1",
-    strategy_variant: "stage10c_v4431_d1_context_integrity",
+    phase: "Stage10C-D1ContextIntegrity",
     eval_time: "2026-07-15T12:00:00Z",
-    bar_h4: "2026-07-15T08:00:00Z",
+    bar_time_h4: "2026-07-15T08:00:00Z",
+    direction: "buy",
+    entry_price: 162.299,
     action: "ENTRY_ACCEPTED",
     decision: "ERROR",
     would_have_traded: true,
@@ -33,6 +35,7 @@ test("valid shadow entry is not labeled ERROR", () => {
   assert.equal(result.technicalSignalStatus, "ENTRY_READY");
   assert.equal(result.executionMode, "SHADOW_ONLY");
   assert.equal(result.orderSendAllowed, false);
+  assert.equal(result.barH4, "2026-07-15T08:00:00Z");
   assert.equal(
     result.reasons.executionDeniedReason,
     "EA_REAL_TRADING_DISABLED_SAFE_FALLBACK",
@@ -91,8 +94,8 @@ test("signal_eval_id is deterministic and retry-safe", () => {
   const payload = {
     symbol: "USDJPY",
     ea_version: "v4.43.1",
-    strategy_variant: "stage10c_v4431_d1_context_integrity",
-    bar_h4: "2026-07-15T08:00:00Z",
+    phase: "Stage10C-D1ContextIntegrity",
+    eval_time: "2026-07-15T12:00:00Z",
     direction: "buy",
     entry_price: 162.299,
   };
@@ -104,10 +107,10 @@ test("provided signal_eval_id is preserved", () => {
   assert.equal(resolveSignalEvalId({ signal_eval_id: "sig-explicit" }), "sig-explicit");
 });
 
-test("trade open keeps order ticket separate from position id", () => {
+test("trade open keeps explicit order ticket separate from position id", () => {
   const identity = normalizeTradeIdentity(
     {
-      ticket: 2016949262,
+      ticket: 152340804622,
       order_ticket: 2016949262,
       position_id: 152340804622,
       signal_eval_id: "sig-1",
@@ -115,27 +118,74 @@ test("trade open keeps order ticket separate from position id", () => {
     },
     "trade_open",
   );
-  assert.equal(identity.ticket, 2016949262);
+  assert.equal(identity.ticket, 152340804622);
   assert.equal(identity.orderTicket, 2016949262);
   assert.equal(identity.dealTicket, null);
   assert.equal(identity.positionId, 152340804622);
-  assert.equal(identity.linkStatus, "LINKED_SIGNAL_POSITION");
+  assert.equal(identity.linkStatus, "LINKED_SIGNAL_ORDER_POSITION");
 });
 
-test("trade close keeps deal ticket separate from position id", () => {
+test("actual v4430 open ticket is treated as position, not invented order", () => {
+  const payload = {
+    event: "trade_open",
+    symbol: "USDJPY",
+    ticket: 152340804622,
+    position_id: 152340804622,
+    direction: "buy",
+    entry_price: 162.299,
+    open_price: 162.299,
+    open_time: "2026-07-15T12:00:00Z",
+    ea_version: "v4.43.0",
+    phase: "Stage10C-USDJPYFirstGovernanceReset",
+    execution_mode: "REAL",
+  };
+  const identity = normalizeTradeIdentity(payload, "trade_open");
+  assert.equal(identity.ticket, 152340804622);
+  assert.equal(identity.positionId, 152340804622);
+  assert.equal(identity.orderTicket, null);
+  assert.match(identity.signalEvalId, /^stage10c-sig-[0-9a-f]{16}$/);
+  assert.equal(identity.linkStatus, "LINKED_SIGNAL_POSITION_MISSING_ORDER_TICKET");
+});
+
+test("signal and trade payloads derive the same correlation id", () => {
+  const common = {
+    symbol: "USDJPY",
+    ea_version: "v4.43.0",
+    phase: "Stage10C-USDJPYFirstGovernanceReset",
+    direction: "buy",
+    entry_price: 162.299,
+  };
+  const signalId = resolveSignalEvalId({
+    ...common,
+    eval_time: "2026-07-15T12:00:00Z",
+    bar_time_h4: "2026-07-15T08:00:00Z",
+  });
+  const trade = normalizeTradeIdentity(
+    {
+      ...common,
+      open_time: "2026-07-15T12:00:00Z",
+      ticket: 152340804622,
+      position_id: 152340804622,
+    },
+    "trade_open",
+  );
+  assert.equal(trade.signalEvalId, signalId);
+});
+
+test("trade close keeps explicit deal ticket separate from position id", () => {
   const identity = normalizeTradeIdentity(
     {
-      ticket: 301,
+      ticket: 152340804622,
       deal_ticket: 301,
       position_id: 152340804622,
     },
     "trade_close",
   );
-  assert.equal(identity.ticket, 301);
+  assert.equal(identity.ticket, 152340804622);
   assert.equal(identity.orderTicket, null);
   assert.equal(identity.dealTicket, 301);
   assert.equal(identity.positionId, 152340804622);
-  assert.equal(identity.linkStatus, "CLOSE_MATCH_BY_POSITION");
+  assert.equal(identity.linkStatus, "CLOSE_POSITION_AND_DEAL_IDENTIFIED");
 });
 
 test("legacy open ticket is never copied into position_id", () => {
