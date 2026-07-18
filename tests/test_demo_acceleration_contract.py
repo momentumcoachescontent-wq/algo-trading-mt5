@@ -104,13 +104,15 @@ class DemoAccelerationContractTests(unittest.TestCase):
 
     def test_malformed_list_fields_do_not_crash(self) -> None:
         mutated = copy.deepcopy(self.contract)
-        mutated["required_identity_fields"] = "not-a-list"
+        mutated["required_identity_fields"] = [["unhashable_list"]]
         mutated["stage1_exit_criteria"] = None
         mutated["engines"]["stage10c_v4430_control"]["frozen_fields"] = 123
         mutated["engines"]["frequency_body015"]["required_unchanged_fields"] = {}
         result = validate_contract(mutated)
         self.assertFalse(result.passed)
-        self.assertTrue(any("required_identity_fields must be a list" in error for error in result.errors))
+        self.assertTrue(
+            any("required_identity_fields must contain only strings" in error for error in result.errors)
+        )
         self.assertTrue(any("stage1_exit_criteria must be a list" in error for error in result.errors))
         self.assertTrue(any("frozen_fields must be a list" in error for error in result.errors))
         self.assertTrue(any("required_unchanged_fields must be a list" in error for error in result.errors))
@@ -140,10 +142,7 @@ class DemoAccelerationContractTests(unittest.TestCase):
     def test_cli_returns_structured_error_for_malformed_contract(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "malformed.json"
-            path.write_text(
-                json.dumps({"required_identity_fields": None}),
-                encoding="utf-8",
-            )
+            path.write_text(json.dumps({"required_identity_fields": None}), encoding="utf-8")
             completed = subprocess.run(
                 [sys.executable, str(CLI_PATH), str(path)],
                 cwd=ROOT,
