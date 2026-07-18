@@ -2,9 +2,11 @@
 
 ## Status
 
-**Stage 2 — IMPLEMENTED / AWAITING VALIDATION**
+**Stage 2 — IMPLEMENTATION VALIDATED / READY FOR OPERATIONAL CHECKPOINT**
 
 This stage repairs Worker and Supabase observability semantics. It does not modify an EA, strategy parameter, signal rule, risk, SL, TP, session, execution policy, or capital authorization. Sleeve B, Frequency body015, and Donchian remain inactive.
+
+Code, contract, dependency-security, local, and CI validation are complete. Operational closure still requires migration, Worker deployment, controlled payload validation, and organic H4 evidence.
 
 ## Evidence that triggered the repair
 
@@ -199,9 +201,26 @@ Signal-evaluation persistence is now required for a successful webhook response.
 
 Lifecycle events remain best-effort. Retry/spool architecture and changes to the EA payload are outside this stage.
 
+## Production dependency security
+
+The initial production audit detected a high-severity advisory against the resolved Hono version `4.12.9`. The dependency is now pinned exactly:
+
+```text
+hono = 4.12.30
+```
+
+Validation result:
+
+```text
+npm audit --omit=dev
+found 0 vulnerabilities
+```
+
+The full development tree may still report advisories in development-only tooling. The deployment gate is the production tree audit, and CI now runs `npm audit --omit=dev` on every relevant pull request change.
+
 ## Deployment order
 
-This PR does not deploy anything. After local validation and explicit approval, the required order is:
+This PR does not deploy anything. After explicit operational authorization, the required order is:
 
 ```text
 1. Apply 006_stage10c_observability.sql.
@@ -219,6 +238,7 @@ Deploying the Worker before the migration is prohibited because new columns woul
 ```bash
 cd infra/worker
 npm ci
+npm audit --omit=dev
 npm test
 npm run typecheck
 
@@ -229,6 +249,7 @@ python3 -m unittest tests.test_stage10c_observability_contract -v
 Expected:
 
 ```text
+production dependency vulnerabilities = 0
 17 Node tests PASS
 13 Python contract tests PASS
 TypeScript PASS
@@ -242,6 +263,7 @@ Stage 2 implementation is ready for operational deployment only when:
 Worker normalization tests = PASS
 Worker typecheck = PASS
 migration contract tests = PASS
+production dependency audit = PASS / 0 vulnerabilities
 valid shadow entry != ERROR = PASS
 execution_mode persistence contract = PASS
 reason separation contract = PASS
@@ -256,4 +278,4 @@ local worktree clean = PASS
 CI = PASS
 ```
 
-Operational closure requires a later migration/deployment validation checkpoint. It is not implied by code-level PASS.
+Operational closure requires a later migration/deployment validation checkpoint. It is not implied by implementation-level PASS.
