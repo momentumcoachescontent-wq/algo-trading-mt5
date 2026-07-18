@@ -2,7 +2,7 @@
 
 ## Status
 
-**CHECKPOINT A READY / CI PASS — NOT YET EXECUTED**
+**CHECKPOINT A2 RETRY READY / CONSTRAINT REPAIR CI PASS**
 
 This runbook applies and validates Supabase migration `006_stage10c_observability.sql` before Worker v3.3.0 is deployed.
 
@@ -33,11 +33,25 @@ Migration `006` is transactional, idempotent, and uses bounded lock and statemen
 
 ```text
 branch = agent/stage10c-observability-repair
-minimum head = 96aa790
+minimum head = a727ab2
 worktree = clean
 ```
 
 Use the latest remote head because later documentation-only commits may not change migration semantics.
+
+## Controlled migration incident and repair
+
+The first production execution attempt failed inside the transaction because the legacy constraint allowed only:
+
+```text
+SIGNAL, BLOCKED, OPENED, CLOSED, ERROR
+```
+
+The historical backfill correctly generated `BLOCKED_BY_TECHNICAL_GUARD`, which the old constraint rejected. PostgreSQL aborted the transaction before `COMMIT`; no partial migration state was accepted.
+
+Migration `006` now replaces `signal_evals_decision_check` before the backfill with a strict superset that preserves every legacy state and allows only the governed normalized states emitted by the Worker. The post-migration validator now includes `decision_constraint_contract`, and CI covers both ordering and allowed-value parity.
+
+Do not use any older local copy of migration `006`.
 
 ## Files
 
@@ -128,6 +142,7 @@ Mandatory checks:
 |---|---|
 | `required_columns` | `PASS`, violations `0` |
 | `required_indexes` | `PASS`, violations `0` |
+| `decision_constraint_contract` | `PASS`, violations `0` |
 | `shadow_entry_not_error` | `PASS`, violations `0` |
 | `v4430_trade_execution_mode` | `PASS`, violations `0` |
 | `signal_eval_id_backfill` | `PASS`, violations `0` |
@@ -159,6 +174,7 @@ A mismatch is a blocker for Worker deployment.
 preflight required tables = PASS
 no unexplained duplicate open trade identity
 migration execution = SUCCESS
+decision constraint contract = PASS
 all mandatory validation checks = PASS
 signal row count unchanged
 trade row count unchanged
