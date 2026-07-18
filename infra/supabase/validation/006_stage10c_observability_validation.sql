@@ -82,7 +82,42 @@ SELECT
 FROM required_indexes r
 LEFT JOIN observed o USING (index_name);
 
--- 3. A valid shadow entry must never remain ERROR after backfill.
+-- 3. The decision constraint must preserve legacy values and allow every
+-- normalized value emitted by the Stage10C observability contract.
+WITH decision_constraint AS (
+    SELECT PG_GET_CONSTRAINTDEF(c.oid, TRUE) AS definition
+    FROM pg_constraint c
+    JOIN pg_class rel ON rel.oid = c.conrelid
+    JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+    WHERE nsp.nspname = 'public'
+      AND rel.relname = 'signal_evals'
+      AND c.conname = 'signal_evals_decision_check'
+      AND c.contype = 'c'
+), evaluated AS (
+    SELECT
+        definition,
+        POSITION('SIGNAL' IN definition) > 0
+        AND POSITION('BLOCKED' IN definition) > 0
+        AND POSITION('OPENED' IN definition) > 0
+        AND POSITION('CLOSED' IN definition) > 0
+        AND POSITION('ERROR' IN definition) > 0
+        AND POSITION('ENTRY_READY_REAL_ALLOWED' IN definition) > 0
+        AND POSITION('ENTRY_READY_SHADOW_ONLY_BLOCKED' IN definition) > 0
+        AND POSITION('BLOCKED_BY_EXECUTION_SCOPE' IN definition) > 0
+        AND POSITION('BLOCKED_BY_GOVERNANCE_GUARD' IN definition) > 0
+        AND POSITION('BLOCKED_BY_TECHNICAL_GUARD' IN definition) > 0
+        AND POSITION('RAW_SIGNAL' IN definition) > 0
+        AND POSITION('NO_SIGNAL' IN definition) > 0 AS contract_ok
+    FROM decision_constraint
+)
+SELECT
+    'decision_constraint_contract' AS check_name,
+    CASE WHEN COUNT(*) = 1 AND BOOL_AND(contract_ok) THEN 0 ELSE 1 END AS violation_count,
+    CASE WHEN COUNT(*) = 1 AND BOOL_AND(contract_ok) THEN 'PASS' ELSE 'FAIL' END AS status,
+    COALESCE(MAX(definition), 'constraint missing') AS detail
+FROM evaluated;
+
+-- 4. A valid shadow entry must never remain ERROR after backfill.
 SELECT
     'shadow_entry_not_error' AS check_name,
     COUNT(*) AS violation_count,
@@ -100,7 +135,7 @@ WHERE UPPER(COALESCE(decision, '')) = 'ERROR'
       OR order_send_allowed = FALSE
   );
 
--- 4. Known Stage10C control trade rows should have REAL execution mode.
+-- 5. Known Stage10C control trade rows should have REAL execution mode.
 SELECT
     'v4430_trade_execution_mode' AS check_name,
     COUNT(*) AS violation_count,
@@ -111,7 +146,7 @@ WHERE symbol = 'USDJPY'
   AND ea_version = 'v4.43.0'
   AND UPPER(COALESCE(execution_mode, '')) <> 'REAL';
 
--- 5. Canonical IDs should be present on all historical signal rows after backfill.
+-- 6. Canonical IDs should be present on all historical signal rows after backfill.
 SELECT
     'signal_eval_id_backfill' AS check_name,
     COUNT(*) AS violation_count,
@@ -120,7 +155,7 @@ SELECT
 FROM public.signal_evals
 WHERE NULLIF(BTRIM(signal_eval_id), '') IS NULL;
 
--- 6. Canonical IDs must use the governed prefix unless explicitly supplied by the EA.
+-- 7. Canonical IDs must use the governed prefix unless explicitly supplied by the EA.
 -- Existing explicit non-governed IDs are reported for review, not automatically failed.
 SELECT
     'signal_eval_id_prefix_inventory' AS check_name,
@@ -134,7 +169,7 @@ SELECT
     COUNT(*) AS total_count
 FROM public.signal_evals;
 
--- 7. Duplicate IDs are inventory only because retries/legacy duplicate events may exist.
+-- 8. Duplicate IDs are inventory only because retries/legacy duplicate events may exist.
 SELECT
     'duplicate_signal_eval_id_inventory' AS check_name,
     COUNT(*) AS duplicate_id_groups,
@@ -147,7 +182,7 @@ FROM (
     HAVING COUNT(*) > 1
 ) duplicates;
 
--- 8. Legacy ambiguous ticket must not be silently manufactured as order_ticket.
+-- 9. Legacy ambiguous ticket must not be silently manufactured as order_ticket.
 SELECT
     'legacy_ticket_not_invented_as_order' AS check_name,
     COUNT(*) AS violation_count,
@@ -160,7 +195,7 @@ WHERE order_ticket IS NOT NULL
   AND order_ticket = ticket
   AND NULLIF(COALESCE(raw_payload ->> 'order_ticket', ''), '') IS NULL;
 
--- 9. Link-quality inventory. Review counts; no expected single distribution.
+-- 10. Link-quality inventory. Review counts; no expected single distribution.
 SELECT
     'trade_link_status_inventory' AS check_name,
     COALESCE(link_status, '<NULL>') AS link_status,
@@ -169,7 +204,7 @@ FROM public.trades
 GROUP BY COALESCE(link_status, '<NULL>')
 ORDER BY row_count DESC, link_status;
 
--- 10. Decision inventory after normalization.
+-- 11. Decision inventory after normalization.
 SELECT
     'signal_decision_inventory' AS check_name,
     COALESCE(decision, '<NULL>') AS decision,
@@ -178,7 +213,7 @@ FROM public.signal_evals
 GROUP BY COALESCE(decision, '<NULL>')
 ORDER BY row_count DESC, decision;
 
--- 11. Execution-mode inventory by version.
+-- 12. Execution-mode inventory by version.
 SELECT
     'execution_mode_inventory' AS check_name,
     ea_version,
@@ -189,7 +224,7 @@ WHERE ea_version IN ('v4.43.0', 'v4.43.1')
 GROUP BY ea_version, COALESCE(execution_mode, '<NULL>')
 ORDER BY ea_version, execution_mode;
 
--- 12. Migration does not change strategy/risk fields; provide row-count snapshot.
+-- 13. Migration does not change strategy/risk fields; provide row-count snapshot.
 SELECT
     'row_count_snapshot' AS check_name,
     (SELECT COUNT(*) FROM public.signal_evals) AS signal_eval_rows,
