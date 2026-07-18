@@ -281,19 +281,7 @@ export function normalizeSignalReasons(body: Payload): NormalizedReasons {
   };
 }
 
-function fnv1a64(value: string): string {
-  let hash = 0xcbf29ce484222325n;
-  const prime = 0x100000001b3n;
-  for (const byte of new TextEncoder().encode(value)) {
-    hash ^= BigInt(byte);
-    hash = BigInt.asUintN(64, hash * prime);
-  }
-  return hash.toString(16).padStart(16, "0");
-}
-
 function correlationTime(body: Payload): string | null {
-  // eval_time and trade open_time are the same instant in the current Stage10C
-  // payloads; prioritizing them enables deterministic signal-position linking.
   return toText(
     firstDefined(
       body.eval_time,
@@ -309,6 +297,36 @@ function correlationTime(body: Payload): string | null {
   );
 }
 
+function normalizeCorrelationTime(value: unknown): string {
+  const text = toText(value);
+  if (!text) return "unknown-time";
+  const epoch = Date.parse(text);
+  if (!Number.isFinite(epoch)) return text;
+  return new Date(epoch).toISOString().replace(/\.000Z$/, "Z");
+}
+
+function normalizeCorrelationDirection(value: unknown): string {
+  const text = toText(value)?.toLowerCase();
+  if (!text) return "no-direction";
+  if (text === "long" || text.includes("buy")) return "buy";
+  if (text === "short" || text.includes("sell")) return "sell";
+  return text;
+}
+
+function normalizeCorrelationPrice(value: unknown): string {
+  const number = toNumber(value);
+  if (number === null) return "no-entry";
+  const normalized = number
+    .toFixed(8)
+    .replace(/0+$/, "")
+    .replace(/\.$/, "");
+  return normalized === "-0" ? "0" : normalized;
+}
+
+function normalizeCorrelationText(value: unknown, fallback: string): string {
+  return toText(value)?.toLowerCase() ?? fallback;
+}
+
 function hasCorrelationMaterial(body: Payload): boolean {
   return Boolean(
     toText(body.symbol) &&
@@ -319,20 +337,32 @@ function hasCorrelationMaterial(body: Payload): boolean {
   );
 }
 
+/**
+ * Canonical, transparent Stage10C correlation key.
+ *
+ * PostgreSQL migration 006 uses the exact same field order and normalization.
+ * The controlled fields do not contain the reserved `|` delimiter.
+ */
 export function resolveSignalEvalId(body: Payload): string {
   const provided = toText(firstDefined(body.signal_eval_id, body.signal_id));
   if (provided) return provided;
 
-  const canonical = [
-    toText(body.symbol) ?? "unknown-symbol",
-    toText(body.ea_version) ?? "unknown-version",
-    toText(firstDefined(body.strategy_variant, body.phase)) ?? "unknown-variant",
-    correlationTime(body) ?? "unknown-time",
-    toText(firstDefined(body.direction, body.signal_direction, body.order_direction, body.action)) ??
-      "no-direction",
-    toText(firstDefined(body.entry_price, body.open_price, body.price)) ?? "no-entry",
-  ].join("|");
-  return `stage10c-sig-${fnv1a64(canonical)}`;
+  const parts = [
+    toText(body.symbol)?.toUpperCase() ?? "unknown-symbol",
+    normalizeCorrelationText(body.ea_version, "unknown-version"),
+    normalizeCorrelationText(
+      firstDefined(body.strategy_variant, body.phase),
+      "unknown-variant",
+    ),
+    normalizeCorrelationTime(correlationTime(body)),
+    normalizeCorrelationDirection(
+      firstDefined(body.direction, body.signal_direction, body.order_direction, body.action),
+    ),
+    normalizeCorrelationPrice(
+      firstDefined(body.entry_price, body.open_price, body.price),
+    ),
+  ];
+  return `stage10c-sig-v1|${parts.join("|")}`;
 }
 
 export function buildSignalObservability(body: Payload): SignalObservability {
@@ -382,8 +412,8 @@ export function normalizeTradeIdentity(body: Payload, event: TradeEvent): TradeI
   ) as string | number | null;
 
   const explicitSignalEvalId = toText(firstDefined(body.signal_eval_id, body.signal_id));
-  const signalEvalId = explicitSignalEvalId ??
-    (hasCorrelationMaterial(body) ? resolveSignalEvalId(body) : null);
+  const signalEvalId =
+    explicitSignalEvalId ?? (hasCorrelationMaterial(body) ? resolveSignalEvalId(body) : null);
 
   let linkStatus: string;
   if (event === "trade_open") {
