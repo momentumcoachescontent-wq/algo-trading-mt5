@@ -56,11 +56,19 @@ class Stage10CObservabilityContractTests(unittest.TestCase):
         ):
             self.assertRegex(self.sql, rf"\b{re.escape(column)}\b")
 
-    def test_legacy_ticket_is_not_backfilled_to_position_id(self) -> None:
+    def test_legacy_ticket_is_never_reclassified_as_order_or_deal(self) -> None:
         normalized = " ".join(self.sql.lower().split())
         self.assertNotIn("set position_id = ticket", normalized)
-        self.assertIn("set order_ticket = ticket", normalized)
-        self.assertIn("set deal_ticket = ticket", normalized)
+        self.assertNotIn("set order_ticket = ticket", normalized)
+        self.assertNotIn("set deal_ticket = ticket", normalized)
+        self.assertIn("raw_payload ->> 'order_ticket'", normalized)
+        self.assertIn("raw_payload ->> 'deal_ticket'", normalized)
+
+    def test_unique_historical_signal_position_link_is_supported(self) -> None:
+        self.assertIn("WITH candidate_links AS", self.sql)
+        self.assertIn("HAVING COUNT(*) = 1", self.sql)
+        self.assertIn("s.eval_time = t.open_time", self.sql)
+        self.assertIn("ABS(s.entry_price - t.open_price) <= 0.00001", self.sql)
 
     def test_shadow_entry_error_is_repaired(self) -> None:
         self.assertIn("ENTRY_READY_SHADOW_ONLY_BLOCKED", self.sql)
@@ -92,6 +100,12 @@ class Stage10CObservabilityContractTests(unittest.TestCase):
             self.worker,
         )
         self.assertIn("Supabase ${table} insert failed", self.worker)
+
+    def test_actual_v4430_ticket_semantics_are_documented_in_code(self) -> None:
+        self.assertIn("trade_open payload sends ticket == position_id", self.normalizer)
+        self.assertIn("LINKED_SIGNAL_POSITION_MISSING_ORDER_TICKET", self.normalizer)
+        self.assertIn("body.open_time", self.normalizer)
+        self.assertIn("body.eval_time", self.normalizer)
 
     def test_observability_layer_never_enables_orders(self) -> None:
         self.assertNotRegex(
