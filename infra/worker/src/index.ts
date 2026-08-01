@@ -1,6 +1,6 @@
 /**
  * Cloudflare Worker — algo-trading-mt5
- * v3.3.0 — Stage10C observability and trade-linking repair
+ * v3.3.1 — Stage10C lifecycle observability repair
  *
  * This release changes persistence semantics only. It does not change strategy,
  * risk, signals, order authorization, or EA parameters.
@@ -15,6 +15,7 @@ import {
   toText,
 } from "./observability";
 import { chooseOpenTradeCandidate } from "./tradeCandidate";
+import { buildLifecycleRow } from "./lifecycle";
 import type { Payload, TradeEvent } from "./observability";
 import type { OpenTradeCandidate } from "./tradeCandidate";
 
@@ -150,7 +151,7 @@ const app = new Hono<{ Bindings: Env }>();
 app.get("/trading/health", (c) =>
   c.json({
     status: "ok",
-    version: "3.3.0-stage10c-observability",
+    version: "3.3.1-stage10c-lifecycle-observability",
     ts: new Date().toISOString(),
   }),
 );
@@ -512,19 +513,9 @@ async function handleLifecycle(
   key: string,
   requestId: string,
 ): Promise<void> {
-  const row = {
-    event,
-    symbol: body.symbol,
-    ea_version: body.ea_version,
-    phase: body.phase ?? null,
-    balance: toNumber(body.balance),
-    ts: new Date().toISOString(),
-  };
-  const res = await supabaseInsert(supabaseUrl, key, "ea_events", row, requestId);
-  if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    console.log(`[EA_EVENT_WARN] ${JSON.stringify({ requestId, status: res.status, detail, row })}`);
-  }
+  const lifecycleEvent = event === "ea_deinit" ? "ea_deinit" : "ea_init";
+  const row = buildLifecycleRow(body, lifecycleEvent, requestId);
+  await requireInsert(supabaseUrl, key, "ea_events", row, requestId);
 }
 
 async function supabaseInsert(

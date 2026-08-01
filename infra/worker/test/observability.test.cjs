@@ -12,6 +12,10 @@ const {
 const {
   chooseOpenTradeCandidate,
 } = require("../.tmp-test/tradeCandidate.js");
+const {
+  buildLifecycleExecutionScope,
+  buildLifecycleRow,
+} = require("../.tmp-test/lifecycle.js");
 
 test("valid shadow entry is not labeled ERROR", () => {
   const payload = {
@@ -247,4 +251,74 @@ test("normalization never authorizes an order", () => {
   });
   assert.equal(result.orderSendAllowed, false);
   assert.equal(result.decision, "ENTRY_READY_SHADOW_ONLY_BLOCKED");
+});
+
+test("v4.43.0 lifecycle row persists real execution evidence", () => {
+  const receivedAt = "2026-08-01T16:17:35.000Z";
+  const payload = {
+    event: "ea_init",
+    symbol: "USDJPY",
+    ea_version: "v4.43.0",
+    phase: "Stage10C-USDJPYFirstGovernanceReset",
+    guard_version: "v4430_usdjpy_first_governance_reset",
+    boot_id: "boot-real",
+    execution_scope: JSON.stringify({
+      policy_name: "stage10c_usdjpy_first_governance_reset",
+      mode: "REAL",
+      capital_enabled: true,
+      order_send_allowed: true,
+      symbol_real_allowed: true,
+      reason_code: "EA_USDJPY_REAL_ALLOWED",
+    }),
+  };
+
+  const row = buildLifecycleRow(payload, "ea_init", "289d1d7e", receivedAt);
+  assert.equal(row.request_id, "289d1d7e");
+  assert.equal(row.execution_mode, "REAL");
+  assert.equal(row.guard_version, "v4430_usdjpy_first_governance_reset");
+  assert.equal(row.execution_scope.capital_enabled, true);
+  assert.equal(row.execution_scope.order_send_allowed, true);
+  assert.equal(row.execution_scope.symbol_real_allowed, true);
+  assert.equal(row.raw_payload.worker_request_id, "289d1d7e");
+  assert.equal(row.raw_payload.worker_received_at, receivedAt);
+});
+
+test("v4.43.1 lifecycle row persists shadow-only safety", () => {
+  const payload = {
+    event: "ea_init",
+    symbol: "USDJPY",
+    ea_version: "v4.43.1",
+    phase: "Stage10C-D1ContextIntegrity",
+    execution_mode: "SHADOW_ONLY",
+    capital_enabled: false,
+    order_send_allowed: false,
+    execution_scope: {
+      capital_enabled: false,
+      order_send_allowed: false,
+    },
+  };
+
+  const row = buildLifecycleRow(payload, "ea_init", "78fc7f99");
+  assert.equal(row.execution_mode, "SHADOW_ONLY");
+  assert.equal(row.execution_scope.mode, "SHADOW_ONLY");
+  assert.equal(row.execution_scope.capital_enabled, false);
+  assert.equal(row.execution_scope.order_send_allowed, false);
+  assert.equal(row.request_id, "78fc7f99");
+  assert.equal(row.raw_payload.ea_version, "v4.43.1");
+});
+
+test("legacy lifecycle payload remains compatible and auditable", () => {
+  const payload = {
+    event: "ea_init",
+    symbol: "USDJPY",
+    ea_version: "v4.40.1",
+  };
+  const scope = buildLifecycleExecutionScope(payload);
+  const row = buildLifecycleRow(payload, "ea_init", "legacy001");
+
+  assert.equal(scope, null);
+  assert.equal(row.execution_mode, null);
+  assert.equal(row.execution_scope, null);
+  assert.equal(row.raw_payload.normalized_event, "ea_init");
+  assert.equal(row.request_id, "legacy001");
 });
