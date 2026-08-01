@@ -5,9 +5,9 @@
 | Stage | Purpose | Current status |
 |---|---|---|
 | Stage10B | Controlled frequency pilot | Closed; not promoted |
-| Stage10C | USDJPY-first governance reset and live core baseline | Active core; unchanged by Stage10D |
-| Stage10D | Momentum continuation challenger research | Phase 1 CLOSED / PASS; Phase 2 awaits explicit authorization |
-| Demo Acceleration | Isolated demo evidence acceleration | Stage 1 CLOSED / PASS; Stage 2 observability repair next |
+| Stage10C | USDJPY-first governance reset and live core baseline | Active demo control; strategy unchanged |
+| Stage10D | Momentum continuation challenger research | Phase 1 CLOSED / PASS; Phase 2 remains isolated offline research |
+| Demo Acceleration | Isolated demo evidence acceleration | Stage 1 CLOSED / PASS; Stage 2 code validated, operational migration checkpoint pending |
 
 ## Stage10C documents
 
@@ -17,6 +17,9 @@
 - `STAGE10C_EXECUTION_SCOPE_PAYLOAD.md`
 - `STAGE10C_IMPLEMENTATION_READINESS_PLAN.md`
 - `STAGE10C_MASTER_DESIGN_CLOSURE.md`
+- `STAGE10C_LIFECYCLE_OBSERVABILITY_CLOSURE.md`
+- `STAGE10C_OBSERVABILITY_REPAIR.md`
+- `STAGE10C_OBSERVABILITY_OPERATIONAL_RUNBOOK.md`
 - `STAGE10C_SUPABASE_DASHBOARD_PERSISTENCE_DESIGN.md`
 - `STAGE10C_TOUCH_GAP_INSTRUMENTATION.md`
 - `STAGE10C_WORKER_POLICY_DESIGN.md`
@@ -50,34 +53,58 @@ Demo Acceleration does not replace or relax Stage10C. It preserves the v4.43.0 c
 
 ## Demo Acceleration Stage 1 closure
 
-Stage 1 closed with:
+Stage 1 closed with its canonical governance contract and subsequent hardening:
 
 ```text
 contract_id=57d4efc4cf332d46c4cad9a5
 PASS_GOVERNANCE_CONTRACT
-9/9 unit tests PASS
-Demo Acceleration CI PASS
-Stage10D Phase 1 regression PASS
-local worktree clean
-exports/ preserved and ignored
+reserved identities pinned
+malformed contracts fail safely
+planned challengers cannot become order-capable
 activation_authorized=false
 production_capital_authorized=false
 ```
 
-Stage 1 defined machine-readable governance only:
-
-```text
-control risk and parameters frozen
-challenger-specific gates preserved
-account slots reserved
-strategy identity and Magic reserved
-portfolio risk envelope recorded
-future implementation branches isolated
-```
-
 It did not activate Sleeve B, Frequency body015 or Donchian, and did not change an EA, Worker, Supabase, MT5 input or capital authorization.
 
-The next authorized Demo Acceleration activity is Stage 2: minimum Stage10C observability repair on branch `agent/stage10c-observability-repair`.
+## Demo Acceleration Stage 2 boundary
+
+Stage 2 repairs observability only:
+
+```text
+valid shadow ENTRY_READY is not ERROR
+execution_mode is persisted
+signal/governance/execution reasons are separated
+order_ticket, deal_ticket and position_id are distinct
+signal_eval_id supports explicit correlation
+close matching updates one unambiguous row
+failed signal persistence cannot return misleading HTTP 200
+production dependency audit = 0 vulnerabilities
+```
+
+Implementation and operational paths:
+
+```text
+infra/worker/src/observability.ts
+infra/worker/src/tradeCandidate.ts
+infra/worker/src/index.ts
+infra/supabase/migrations/006_stage10c_observability.sql
+infra/supabase/validation/006_stage10c_observability_preflight.sql
+infra/supabase/validation/006_stage10c_observability_validation.sql
+docs/stage10/STAGE10C_OBSERVABILITY_REPAIR.md
+docs/stage10/STAGE10C_OBSERVABILITY_OPERATIONAL_RUNBOOK.md
+```
+
+Stage 2 does not modify any EA or activate a challenger. Code, contracts, dependency security, local validation, and CI are PASS.
+
+Lifecycle persistence is now operationally closed on Worker
+`3.3.1-stage10c-lifecycle-observability`. Organic `ea_init` events from v4.43.0
+REAL and v4.43.1 SHADOW_ONLY passed request correlation, uniqueness,
+persistence and execution-contract gates. The `ea_deinit` network failure that
+occurs only during terminal shutdown (`REASON_CLOSE`, local MQL5 error `4006`)
+is classified as a known non-blocking teardown limitation; the local payload is
+retained and continuity is re-established by the next `ea_init` and `boot_id`.
+See `STAGE10C_LIFECYCLE_OBSERVABILITY_CLOSURE.md`.
 
 ## F5A.6 Pilar C disposition
 
@@ -90,13 +117,13 @@ Pilar C is absorbed into Stage10D:
 
 No separate Pilar C execution stream remains.
 
-## Phase 1 closure finding
+## Stage10D Phase 1 closure finding
 
 The exact active v4.43.0 sources disproved the initial stale-cache hypothesis.
 
 `CH4Signal::Evaluate()` generated the H4 BUY/SELL pattern independently of `bias_d1`; the bias only selected a diagnostic fail reason when no pattern existed. Therefore a raw candidate could be generated while D1 was neutral or opposite.
 
-The v4.43.1 candidate now separates:
+The v4.43.1 candidate separates:
 
 ```text
 raw_h4_signal
@@ -105,9 +132,9 @@ filtered_h4_signal
 
 Only a raw signal aligned with the discrete D1 bias can be promoted. Neutral or opposite candidates remain observable for research and are blocked before `ENTRY_READY`.
 
-The final validator isolates the exact v4.43.1 EA marker and joins rotated MT5 logs when necessary. Events emitted by the active v4.43.0 real EA cannot satisfy or fail the shadow gate.
+The final validator isolates the exact v4.43.1 EA marker and joins rotated MT5 logs when necessary. Events emitted by the active v4.43.0 control cannot satisfy or fail the shadow gate.
 
-## Final Phase 1 gate
+## Final Stage10D Phase 1 gate
 
 ```text
 Phase 1 diagnosis = PASS
@@ -124,7 +151,4 @@ Phase 1 targeted CI = PASS
 Phase 1 organic H4 evaluations = 2 PASS / 0 violations
 Phase 1 final validator = PASS_PHASE1_FORWARD_GATE
 Phase 1 status = CLOSED / PASS
-Phase 2 authorization = AWAITING EXPLICIT USER APPROVAL
 ```
-
-No Donchian implementation or Phase 2 strategy work may begin until that approval is given.
