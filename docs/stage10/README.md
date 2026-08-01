@@ -17,6 +17,7 @@
 - `STAGE10C_EXECUTION_SCOPE_PAYLOAD.md`
 - `STAGE10C_IMPLEMENTATION_READINESS_PLAN.md`
 - `STAGE10C_MASTER_DESIGN_CLOSURE.md`
+- `STAGE10C_LIFECYCLE_OBSERVABILITY_CLOSURE.md`
 - `STAGE10C_OBSERVABILITY_REPAIR.md`
 - `STAGE10C_OBSERVABILITY_OPERATIONAL_RUNBOOK.md`
 - `STAGE10C_SUPABASE_DASHBOARD_PERSISTENCE_DESIGN.md`
@@ -94,7 +95,16 @@ docs/stage10/STAGE10C_OBSERVABILITY_REPAIR.md
 docs/stage10/STAGE10C_OBSERVABILITY_OPERATIONAL_RUNBOOK.md
 ```
 
-Stage 2 does not modify any EA or activate a challenger. Code, contracts, dependency security, local validation, and CI are PASS. Migration execution and Worker deployment remain separate operational checkpoints.
+Stage 2 does not modify any EA or activate a challenger. Code, contracts, dependency security, local validation, and CI are PASS.
+
+Lifecycle persistence is now operationally closed on Worker
+`3.3.1-stage10c-lifecycle-observability`. Organic `ea_init` events from v4.43.0
+REAL and v4.43.1 SHADOW_ONLY passed request correlation, uniqueness,
+persistence and execution-contract gates. The `ea_deinit` network failure that
+occurs only during terminal shutdown (`REASON_CLOSE`, local MQL5 error `4006`)
+is classified as a known non-blocking teardown limitation; the local payload is
+retained and continuity is re-established by the next `ea_init` and `boot_id`.
+See `STAGE10C_LIFECYCLE_OBSERVABILITY_CLOSURE.md`.
 
 ## F5A.6 Pilar C disposition
 
