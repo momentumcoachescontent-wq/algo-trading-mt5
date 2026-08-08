@@ -17,6 +17,9 @@ type DataQualityResponse = {
   ok: boolean
   cutoff: string
   summary: {
+    sampled_signal_rows: number
+    unique_h4_evaluations: number
+    duplicate_signal_rows: number
     live_signal_evals_checked: number
     live_incomplete_signal_evals: number
     live_trades_checked: number
@@ -28,6 +31,54 @@ type DataQualityResponse = {
   }
   latest_signal: SignalEval | null
   samples: Record<string, unknown[]>
+  error?: string
+}
+
+type ProgramStatus = {
+  ok: boolean
+  generated_at: string
+  program_decision: {
+    active_challenger: string
+    stage10c_v443x: string
+    worker_331: string
+    stage10d: string
+  }
+  lifecycle: Array<{
+    created_at: string
+    event: string
+    symbol: string
+    ea_version: string
+    phase: string
+    request_id: string | null
+    guard_version: string | null
+    execution_mode: string | null
+    execution_scope: Record<string, unknown> | null
+    capital_enabled: boolean | null
+    order_send_allowed: boolean | null
+    boot_id: string | null
+    terminal_time: string | null
+  }>
+  strategy: Array<{
+    ea_version: string
+    evaluations: number
+    entry_ready: number
+    blocked: number
+    errors: number
+    other: number
+    closed_trades: number
+    total_pnl: number
+    profit_factor: number | null
+    expectancy_pnl: number | null
+    win_rate: number | null
+    max_drawdown_pnl: number
+    sample_basis: string
+    economic_gate: string
+  }>
+  challengers: Array<{
+    id: string
+    status: string
+    economic_gate: string
+  }>
   error?: string
 }
 
@@ -58,6 +109,8 @@ type SignalEval = {
   created_at: string
   symbol: string
   eval_time: string | null
+  bar_h4: string | null
+  decision: string | null
   action: string | null
   block_reason: string | null
   direction: string | null
@@ -73,6 +126,7 @@ type SignalEval = {
   spread_atr_ratio: number | null
   raw_payload: unknown | null
   ea_version: string | null
+  strategy_variant: string | null
   phase: string | null
 }
 
@@ -135,6 +189,16 @@ function formatNumber(value: number | null | undefined, digits = 5): string {
 
 function statusClass(ok: boolean): string {
   return ok ? 'status-ok' : 'status-warn'
+}
+
+function legacyCanExecute(row: ProgramStatus['lifecycle'][number]): boolean {
+  if (row.ea_version === 'v4.44.0') return false
+  return row.execution_mode === 'REAL' && (
+    row.capital_enabled === true ||
+    row.order_send_allowed === true ||
+    row.execution_scope?.capital_enabled === true ||
+    row.execution_scope?.order_send_allowed === true
+  )
 }
 
 function Badge({
@@ -365,6 +429,7 @@ function SignalsTable({
 
 function App() {
   const health = useApi<{ ok: boolean; ts: string; service: string; mode: string }>('/api/health')
+  const program = useApi<ProgramStatus>('/api/program-status')
   const openPositions = useApi<ApiRows<Trade>>('/api/open-positions')
   const cleanEdgeTrades = useApi<ApiRows<Trade>>('/api/clean-edge-trades')
   const excludedTrades = useApi<ApiRows<Trade>>('/api/excluded-trades')
@@ -378,6 +443,13 @@ function App() {
   const signalRows = latestSignals.data?.rows ?? []
   const liveSignalRows = liveValidationSignals.data?.rows ?? []
   const qualitySummary = quality.data?.summary
+  const activeLifecycle = program.data?.lifecycle.find((row) => row.ea_version === 'v4.44.0')
+  const activeStrategy = program.data?.strategy.find((row) => row.ea_version === 'v4.44.0')
+  const executableLegacy = useMemo(
+    () => program.data?.lifecycle.filter(legacyCanExecute) ?? [],
+    [program.data?.lifecycle],
+  )
+  const latestActiveSignal = signalRows[0]
 
   const bugDataStatus = useMemo(() => {
     if (!qualitySummary) return 'Waiting'
@@ -393,25 +465,167 @@ function App() {
     return ok ? 'Live OK' : 'Needs Review'
   }, [qualitySummary])
 
+  const operationalAlerts = useMemo(() => {
+    const alerts: string[] = []
+    if (health.error) alerts.push('Dashboard API sin respuesta')
+    if (program.error) alerts.push('No se pudo leer el estado del programa')
+    if (!program.loading && !activeLifecycle) alerts.push('Falta lifecycle de v4.44.0')
+    for (const row of executableLegacy) alerts.push(`CRITICAL: ${row.ea_version} legacy puede enviar órdenes`)
+    if ((qualitySummary?.live_incomplete_signal_evals ?? 0) > 0) alerts.push('Evaluaciones H4 incompletas')
+    if ((qualitySummary?.duplicate_signal_rows ?? 0) > 0) alerts.push('Filas duplicadas detectadas')
+    return alerts
+  }, [activeLifecycle, executableLegacy, health.error, program.error, program.loading, qualitySummary])
+
   return (
     <main className="shell">
       <section className="hero">
         <p className="eyebrow">Algo Trading MT5</p>
-        <h1>F5A Operations Dashboard</h1>
+        <h1>Stage10 Impact Dashboard</h1>
         <p className="subtitle">
-          Dashboard read-only para monitorear ejecución, muestra limpia, histórico excluido y
-          validación live de BUG-DATA-01 sin afectar al EA.
+          Separa salud operativa de evidencia económica. Worker 3.3.1 observa; los Experts solo
+          avanzan cuando frecuencia, expectativa, drawdown y robustez pasan su gate.
         </p>
       </section>
 
       <section className="grid">
         <article className="card">
-          <p className="card-title">Dashboard API</p>
-          <h2 className={statusClass(!health.error && !health.loading)}>
-            {health.loading ? 'Checking' : health.error ? 'Fail' : 'OK'}
+          <p className="card-title">Expert activo</p>
+          <h2 className={statusClass(Boolean(activeLifecycle) && !program.error)}>
+            {program.loading ? 'Checking' : activeLifecycle ? 'v4.44.0 · DEMO' : 'Sin lifecycle'}
           </h2>
-          <p>{health.data?.service ?? health.error ?? 'Read-only API'}</p>
+          <p>USDJPY H4 · BUY_ONLY · riesgo 0.25% · Magic 20260803.</p>
         </article>
+
+        <article className="card">
+          <p className="card-title">Última decisión</p>
+          <h2>{latestActiveSignal?.decision ?? latestActiveSignal?.action ?? 'Esperando H4'}</h2>
+          <p>{latestActiveSignal?.block_reason ?? 'Aún no existe una evaluación del challenger.'}</p>
+        </article>
+
+        <article className="card">
+          <p className="card-title">Ejecución</p>
+          <h2 className={statusClass(openRows.length === 0)}>{openRows.length} posiciones</h2>
+          <p>{activeStrategy?.entry_ready ?? 0} entry-ready · {activeStrategy?.closed_trades ?? 0} trades cerrados.</p>
+        </article>
+
+        <article className="card">
+          <p className="card-title">Calidad v4.44.0</p>
+          <h2 className={statusClass((qualitySummary?.live_incomplete_signal_evals ?? 1) === 0)}>
+            {quality.loading ? 'Checking' : quality.error ? 'Fail' : bugDataStatus}
+          </h2>
+          <p>{qualitySummary?.unique_h4_evaluations ?? 0} velas H4 únicas · {qualitySummary?.duplicate_signal_rows ?? 0} duplicados.</p>
+        </article>
+      </section>
+
+      <section className="section alert-strip">
+        <div>
+          <p className="eyebrow">Alertas accionables</p>
+          <h2>{operationalAlerts.length === 0 ? 'Sin intervención requerida' : `${operationalAlerts.length} por revisar`}</h2>
+        </div>
+        <div className="alert-list">
+          {operationalAlerts.length === 0
+            ? <Badge tone="ok">operación normal</Badge>
+            : operationalAlerts.map((alert) => <Badge key={alert} tone="warn">{alert}</Badge>)}
+        </div>
+      </section>
+
+      <section className="section">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">Worker 3.3.1 contract</p>
+            <h2>Lifecycle & Execution Scope</h2>
+          </div>
+          <Badge tone={program.error ? 'warn' : 'ok'}>{program.error ? 'API failure' : 'read only'}</Badge>
+        </div>
+        <div className="table-wrap">
+          <table className="table-compact">
+            <thead>
+              <tr><th>EA</th><th>Mode</th><th>Capital</th><th>OrderSend</th><th>Latest event</th><th>Request</th><th>Boot</th><th>Observed UTC</th></tr>
+            </thead>
+            <tbody>
+              {!program.loading && (program.data?.lifecycle.length ?? 0) === 0 && (
+                <tr><td colSpan={8}>{program.error ?? 'Sin lifecycle Stage10C registrado.'}</td></tr>
+              )}
+              {program.data?.lifecycle.map((row) => (
+                <tr key={`${row.ea_version}-${row.request_id}`}>
+                  <td className="strong">{row.ea_version}</td>
+                  <td><Badge tone={row.execution_mode === 'REAL' ? 'warn' : 'neutral'}>{row.execution_mode ?? 'UNKNOWN'}</Badge></td>
+                  <td>{row.capital_enabled == null ? '—' : row.capital_enabled ? 'ENABLED' : 'DISABLED'}</td>
+                  <td>{row.order_send_allowed == null ? '—' : row.order_send_allowed ? 'ALLOWED' : 'BLOCKED'}</td>
+                  <td>{row.event}</td>
+                  <td>{row.request_id ?? '—'}</td>
+                  <td>{row.boot_id ?? '—'}</td>
+                  <td>{formatDate(row.created_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="section">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">Economic evidence</p>
+            <h2>Strategy Gate — Not Telemetry</h2>
+          </div>
+          <Badge tone="warn">no automatic promotion</Badge>
+        </div>
+        <div className="table-wrap">
+          <table className="table-compact">
+            <thead>
+              <tr><th>EA</th><th>Evals</th><th>Entry ready</th><th>Blocked</th><th>Errors</th><th>Other</th><th>Closed</th><th>PF</th><th>Exp. PnL</th><th>Max DD PnL</th><th>Gate</th></tr>
+            </thead>
+            <tbody>
+              {program.data?.strategy.map((row) => (
+                <tr key={row.ea_version}>
+                  <td className="strong">{row.ea_version}</td>
+                  <td>{row.evaluations}</td>
+                  <td>{row.entry_ready}</td>
+                  <td>{row.blocked}</td>
+                  <td>{row.errors}</td>
+                  <td>{row.other}</td>
+                  <td>{row.closed_trades}</td>
+                  <td>{row.profit_factor == null ? '—' : row.profit_factor.toFixed(2)}</td>
+                  <td>{row.expectancy_pnl == null ? '—' : row.expectancy_pnl.toFixed(2)}</td>
+                  <td>{row.max_drawdown_pnl.toFixed(2)}</td>
+                  <td><Badge tone="warn">{row.economic_gate}</Badge></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="notice">
+          <strong>Estado legacy calculado:</strong>{' '}
+          {executableLegacy.length === 0
+            ? 'ningún v4.43.x reporta capacidad real de enviar órdenes.'
+            : `${executableLegacy.map((row) => row.ea_version).join(', ')} conserva capacidad real de ejecución.`}{' '}
+          Un webhook 200, un lifecycle completo o más evaluaciones no sustituyen trades cerrados,
+          PF, expectativa, drawdown ni OOS.
+        </div>
+      </section>
+
+      <section className="section">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">Impact program</p>
+            <h2>New Expert Pipeline</h2>
+          </div>
+          <Badge tone="neutral">isolated challengers</Badge>
+        </div>
+        <div className="table-wrap">
+          <table className="table-compact">
+            <thead><tr><th>Challenger</th><th>Status</th><th>Economic gate</th></tr></thead>
+            <tbody>
+              {program.data?.challengers.map((row) => (
+                <tr key={row.id}><td className="strong">{row.id}</td><td>{row.status}</td><td>{row.economic_gate}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="grid legacy-grid">
 
         <article className="card">
           <p className="card-title">Open Positions</p>
@@ -432,7 +646,7 @@ function App() {
           </h2>
           <p>
             {qualitySummary
-              ? `${qualitySummary.live_signal_evals_checked} señales live desde cutoff`
+              ? `${qualitySummary.unique_h4_evaluations} velas H4 únicas de v4.44.0`
               : quality.error ?? 'Esperando próxima validación H4'}
           </p>
         </article>
@@ -466,11 +680,19 @@ function App() {
             <strong>{quality.data?.cutoff ? formatDate(quality.data.cutoff) : '—'}</strong>
           </div>
           <div className="metric">
-            <span>Live signal evals</span>
-            <strong>{qualitySummary?.live_signal_evals_checked ?? '—'}</strong>
+            <span>Velas H4 únicas</span>
+            <strong>{qualitySummary?.unique_h4_evaluations ?? '—'}</strong>
           </div>
           <div className="metric">
-            <span>Incomplete live signals</span>
+            <span>Filas muestreadas</span>
+            <strong>{qualitySummary?.sampled_signal_rows ?? '—'}</strong>
+          </div>
+          <div className="metric">
+            <span>Duplicados</span>
+            <strong>{qualitySummary?.duplicate_signal_rows ?? '—'}</strong>
+          </div>
+          <div className="metric">
+            <span>Evaluaciones incompletas</span>
             <strong>{qualitySummary?.live_incomplete_signal_evals ?? '—'}</strong>
           </div>
           <div className="metric">

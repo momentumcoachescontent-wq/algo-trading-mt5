@@ -69,6 +69,8 @@ h1 {
   color: #0f172a;
   font-size: 1.45rem;
   line-height: 1.2;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .card p:last-child {
@@ -244,6 +246,19 @@ tr:last-child td {
   line-height: 1.6;
 }
 
+.alert-strip,
+.alert-list {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.alert-list {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
 @media (max-width: 1020px) {
   .grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -257,6 +272,11 @@ tr:last-child td {
 @media (max-width: 640px) {
   .shell {
     padding: 36px 0;
+  }
+
+  .alert-strip {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .grid,

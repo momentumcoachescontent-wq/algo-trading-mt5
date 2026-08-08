@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "deploy": "bun run build && bunx wrangler deploy --config wrangler.jsonc"
+    "deploy": "npm run build && wrangler deploy --config wrangler.jsonc --keep-vars",
+    "test:worker": "node --experimental-strip-types --test worker/*.test.mjs"
   },
   "dependencies": {
     "react": "^19.2.5",
@@ -26,6 +27,7 @@
     "globals": "^17.5.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.58.2",
-    "vite": "^8.0.10"
+    "vite": "^8.0.10",
+    "wrangler": "^4.120.0"
   }
 }
