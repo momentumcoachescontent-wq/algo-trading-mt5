@@ -90,6 +90,13 @@ function normalizeDirection(raw?: unknown): "buy" | "sell" | null {
   return null;
 }
 
+// The deployed legacy constraint predates demo execution and only accepts the
+// Stage10 canonical modes. Preserve DEMO in raw_payload and leave the canonical
+// column null until migration 007 is applied to Supabase.
+function persistenceExecutionMode(mode: string | null): string | null {
+  return mode?.trim().toUpperCase() === "DEMO" ? null : mode;
+}
+
 function supabaseHeaders(key: string, prefer = "return=minimal"): HeadersInit {
   return {
     "Content-Type": "application/json",
@@ -298,6 +305,7 @@ async function handleTradeEvent(
   if (!direction) throw new Error(`direction inválido: '${String(body.direction)}'`);
 
   const identity = normalizeTradeIdentity(body, event);
+  const executionMode = persistenceExecutionMode(identity.executionMode);
   const lots = toNumber(firstDefined(body.lots, body.volume));
   const rawPayload = buildRawPayload(body, event, requestId);
 
@@ -328,7 +336,7 @@ async function handleTradeEvent(
       phase: body.phase ?? null,
       ea_version: body.ea_version,
       event_type: "open",
-      execution_mode: identity.executionMode,
+      execution_mode: executionMode,
       strategy_variant: identity.strategyVariant,
       guard_version: identity.guardVersion,
       magic_number: identity.magicNumber,
@@ -356,7 +364,7 @@ async function handleTradeEvent(
     pnl: toNumber(body.pnl),
     close_reason: firstDefined(body.close_reason, body.reason, body.deal_reason),
     event_type: "close",
-    execution_mode: identity.executionMode,
+    execution_mode: executionMode,
     strategy_variant: identity.strategyVariant,
     guard_version: identity.guardVersion,
     magic_number: identity.magicNumber,
@@ -371,7 +379,7 @@ async function handleTradeEvent(
     key,
     identity.positionId,
     toText(body.symbol),
-    identity.executionMode,
+    executionMode,
     identity.strategyVariant,
     closePatch,
     requestId,
@@ -400,7 +408,7 @@ async function handleTradeEvent(
     phase: body.phase ?? null,
     ea_version: body.ea_version,
     event_type: "close",
-    execution_mode: identity.executionMode,
+    execution_mode: executionMode,
     strategy_variant: identity.strategyVariant,
     guard_version: identity.guardVersion,
     magic_number: identity.magicNumber,
@@ -440,7 +448,7 @@ async function handleSignalEval(
     signal_eval_id: observability.signalEvalId,
     decision: observability.decision,
     technical_signal_status: observability.technicalSignalStatus,
-    execution_mode: observability.executionMode,
+    execution_mode: persistenceExecutionMode(observability.executionMode),
     order_send_allowed: observability.orderSendAllowed,
     would_have_traded: observability.wouldHaveTraded,
     primary_signal_reason: observability.reasons.primarySignalReason,
