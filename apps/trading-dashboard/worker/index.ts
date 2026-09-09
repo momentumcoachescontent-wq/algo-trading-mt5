@@ -8,9 +8,20 @@ type Env = {
 }
 
 const BUG_DATA_01_CUTOFF = '2026-05-10T15:55:00.000Z'
-const ACTIVE_EA_VERSION = 'v4.44.0'
+const ACTIVE_EA_VERSION = 'v4.44.1'
 const ACTIVE_STRATEGY_VARIANT = 'stage10_usdjpy_buy_v4401_demo'
-const STAGE10_VERSIONS = [ACTIVE_EA_VERSION, 'v4.43.0', 'v4.43.1'] as const
+const STAGE10_VERSIONS = [ACTIVE_EA_VERSION, 'v4.44.0', 'v4.43.0', 'v4.43.1'] as const
+const V5_EA_VERSION = 'v5.2.0'
+const V5_STRATEGY_VARIANT = 'portfolio_trend_v520'
+const V5_SYMBOLS = ['USDJPY', 'USDCHF', 'XAUUSD', 'AMD'] as const
+const V5_SLEEVES = [
+  { symbol: 'USDJPY', timeframe: 'D1', sleeve: 'CORE_D1', experimental: false },
+  { symbol: 'USDCHF', timeframe: 'D1', sleeve: 'CORE_D1', experimental: false },
+  { symbol: 'XAUUSD', timeframe: 'D1', sleeve: 'CORE_D1', experimental: false },
+  { symbol: 'XAUUSD', timeframe: 'H4', sleeve: 'EXPERIMENTAL_H4', experimental: true },
+  { symbol: 'AMD', timeframe: 'H4', sleeve: 'EXPERIMENTAL_H4', experimental: true },
+] as const
+const V5_GATE_TRADES = 60
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data, null, 2), {
@@ -170,6 +181,7 @@ function normalizeLifecycle(row: Record<string, unknown>): Record<string, unknow
   return {
     ...row,
     execution_scope: executionScope,
+    observed_state: row.event === 'ea_deinit' ? 'STOPPED' : 'LAST_INIT_ONLY',
     capital_enabled: booleanValue(executionScope?.capital_enabled),
     order_send_allowed: booleanValue(executionScope?.order_send_allowed),
   }
@@ -239,7 +251,7 @@ async function programStatus(env: Env): Promise<Response> {
   const [lifecycle, signals, trades] = await Promise.all([
     supabaseRows(
       env,
-      `ea_events?select=created_at,event,symbol,ea_version,phase,request_id,guard_version,execution_mode,execution_scope,boot_id,terminal_time&symbol=eq.USDJPY&ea_version=in.(${versions})&order=created_at.desc&limit=20`,
+      `ea_events?select=created_at,event,symbol,ea_version,phase,request_id,guard_version,execution_mode,execution_scope,boot_id,terminal_time,account_login,account_environment&symbol=eq.USDJPY&ea_version=in.(${versions})&order=created_at.desc&limit=200`,
     ),
     supabaseRows(
       env,
@@ -263,15 +275,18 @@ async function programStatus(env: Env): Promise<Response> {
   return json({
     ok: true,
     generated_at: new Date().toISOString(),
+    active_ea_version: ACTIVE_EA_VERSION,
+    read_scope: 'bounded samples; not a complete portfolio ledger',
     program_decision: {
-      active_challenger: 'DEMO_LIVE_VALIDATION',
+      active_challenger: 'V5_PORTFOLIO_DEMO',
       stage10c_v443x: 'HALTED_NO_PROMOTION',
       worker_331: 'OBSERVABILITY_ONLY',
-      stage10d: 'OFFLINE_RESEARCH',
+      stage10d: 'SUPERSEDED_BY_V5_SCREEN',
     },
     lifecycle: latestLifecycle,
     strategy: STAGE10_VERSIONS.map((version) => strategySummary(version, signals.rows, trades.rows)),
     challengers: [
+      { id: 'portfolio_trend_v500', status: 'DEMO_ACTIVE_FIRST_SIGNAL_MARKET_CLOSED', economic_gate: 'V5C_60_TRADES_PF_GT_1_15_COST_STRESS_REQUIRED' },
       { id: 'sleeve_b_sell_touch025', status: 'PLANNED_NOT_AUTHORIZED', economic_gate: 'STAGE10A_GATE_REQUIRED' },
       { id: 'frequency_body015', status: 'PLANNED_NOT_AUTHORIZED', economic_gate: 'STRONG_GATE_NOT_APPROVED' },
       { id: 'stage10d_donchian', status: 'OFFLINE_RESEARCH', economic_gate: '80_TRADES_PF_GT_1_15_OOS_REQUIRED' },
@@ -506,6 +521,342 @@ async function dataQuality(env: Env): Promise<Response> {
   })
 }
 
+function finiteNumber(value: unknown): number | null {
+  if (value == null || value === '') return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function rowTime(row: Record<string, unknown>): number {
+  const value = row.close_time ?? row.created_at ?? row.eval_time ?? row.terminal_time
+  const parsed = Date.parse(String(value ?? ''))
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function performanceMetrics(rows: Array<Record<string, unknown>>) {
+  const closed = rows
+    .filter((row) => row.close_time != null || row.event_type === 'close')
+    .map((row) => ({ ...row, numeric_pnl: finiteNumber(row.pnl) }))
+    .filter((row) => row.numeric_pnl != null)
+    .sort((a, b) => rowTime(a) - rowTime(b))
+  const pnl = closed.map((row) => row.numeric_pnl as number)
+  const grossProfit = pnl.filter((value) => value > 0).reduce((sum, value) => sum + value, 0)
+  const grossLoss = Math.abs(pnl.filter((value) => value < 0).reduce((sum, value) => sum + value, 0))
+  let cumulative = 0
+  let peak = 0
+  let maxDrawdown = 0
+  const equity_curve = closed.map((row) => {
+    cumulative += row.numeric_pnl as number
+    peak = Math.max(peak, cumulative)
+    maxDrawdown = Math.max(maxDrawdown, peak - cumulative)
+    return {
+      at: row.close_time ?? row.created_at,
+      pnl: row.numeric_pnl,
+      cumulative_pnl: cumulative,
+    }
+  })
+
+  return {
+    closed_trades: closed.length,
+    wins: pnl.filter((value) => value > 0).length,
+    losses: pnl.filter((value) => value <= 0).length,
+    realized_pnl: pnl.reduce((sum, value) => sum + value, 0),
+    profit_factor: grossLoss > 0 ? grossProfit / grossLoss : null,
+    expectancy: pnl.length > 0 ? pnl.reduce((sum, value) => sum + value, 0) / pnl.length : null,
+    win_rate: pnl.length > 0 ? pnl.filter((value) => value > 0).length / pnl.length : null,
+    max_drawdown: maxDrawdown,
+    equity_curve,
+  }
+}
+
+function clamp(value: number, minimum = 0, maximum = 100): number {
+  return Math.min(maximum, Math.max(minimum, value))
+}
+
+function decisionEvaluation(row: Record<string, unknown> | null) {
+  const raw = parseRawPayload(row?.raw_payload)
+  const close = finiteNumber(raw?.close)
+  const channelHigh = finiteNumber(raw?.channel_high)
+  const channelLow = finiteNumber(raw?.channel_low)
+  const exitChannelHigh = finiteNumber(raw?.exit_channel_high)
+  const exitChannelLow = finiteNumber(raw?.exit_channel_low)
+  const sma = finiteNumber(raw?.sma)
+  const current = finiteNumber(raw?.current_position)
+  const target = finiteNumber(raw?.target_position)
+  const orderStatus = String(raw?.order_status ?? 'NO_DATA').toUpperCase()
+  const orderMessage = String(raw?.order_message ?? '')
+  const validInputs = close != null && channelHigh != null && channelLow != null && sma != null && channelHigh > channelLow
+  const trend = validInputs ? (close > sma ? 'BULLISH' : close < sma ? 'BEARISH' : 'NEUTRAL') : 'NO_DATA'
+  const potentialDirection = trend === 'BULLISH' ? 'BUY' : trend === 'BEARISH' ? 'SELL' : 'NONE'
+  const triggerPrice = trend === 'BULLISH' ? channelHigh : trend === 'BEARISH' ? channelLow : null
+  const distanceToTrigger = validInputs && triggerPrice != null && close > 0
+    ? Math.max(0, trend === 'BULLISH' ? ((triggerPrice - close) / close) * 100 : ((close - triggerPrice) / close) * 100)
+    : null
+  const channelPosition = validInputs ? clamp(((close - channelLow) / (channelHigh - channelLow)) * 100) : null
+  const entryReady = target != null && current != null && target !== current && target !== 0
+  const positionManaged = target != null && current != null && target === current && current !== 0
+  const exitTriggerPrice = current === 1 ? exitChannelLow : current === -1 ? exitChannelHigh : null
+  const distanceToExit = close != null && close > 0 && exitTriggerPrice != null
+    ? Math.max(0, current === 1 ? ((close - exitTriggerPrice) / close) * 100 : ((exitTriggerPrice - close) / close) * 100)
+    : null
+  const orderAttempted = /^(OPEN|CLOSE)_/.test(orderStatus)
+  const executed = orderStatus.endsWith('_OK')
+  const executionBlocked = orderAttempted && !executed
+  let selectionStatus = 'DISCARDED'
+  let reasonCode = 'NO_BREAKOUT'
+  let reason = trend === 'BULLISH'
+    ? 'Tendencia alcista; espera ruptura del techo'
+    : trend === 'BEARISH'
+      ? 'Tendencia bajista; espera ruptura del piso'
+      : 'Datos insuficientes para evaluar'
+  if (!validInputs) {
+    reasonCode = 'NO_DATA'
+  } else if (executed) {
+    selectionStatus = 'EXECUTED'
+    reasonCode = 'EXECUTED'
+    reason = 'Señal aprobada y orden ejecutada'
+  } else if (executionBlocked) {
+    selectionStatus = 'EXECUTION_BLOCKED'
+    reasonCode = orderMessage.toLowerCase().includes('market closed') ? 'MARKET_CLOSED' : 'ORDER_REJECTED'
+    reason = orderMessage ? `Señal aprobada; ejecución detenida: ${orderMessage}` : 'Señal aprobada; la orden no fue aceptada'
+  } else if (entryReady) {
+    selectionStatus = 'ENTRY_READY'
+    reasonCode = 'ENTRY_READY'
+    reason = `Ruptura ${potentialDirection === 'BUY' ? 'alcista' : 'bajista'} confirmada; entrada lista`
+  } else if (positionManaged) {
+    selectionStatus = 'MANAGING_POSITION'
+    reasonCode = 'HOLD_POSITION'
+    reason = 'La posición vigente continúa alineada con el modelo'
+  }
+  return {
+    selection_status: selectionStatus,
+    reason_code: reasonCode,
+    discard_reason: reason,
+    valid_inputs: validInputs,
+    trend,
+    potential_direction: potentialDirection,
+    entry_ready: entryReady,
+    order_attempted: orderAttempted,
+    executed,
+    close,
+    sma,
+    channel_high: channelHigh,
+    channel_low: channelLow,
+    exit_channel_high: exitChannelHigh,
+    exit_channel_low: exitChannelLow,
+    exit_trigger_price: exitTriggerPrice,
+    distance_to_exit_pct: distanceToExit,
+    exit_rule: current === 1
+      ? 'Cerrar si la vela termina por debajo del canal de salida'
+      : current === -1
+        ? 'Cerrar si la vela termina por encima del canal de salida'
+        : null,
+    server_sl: 0,
+    server_tp: 0,
+    trigger_price: triggerPrice,
+    distance_to_trigger_pct: distanceToTrigger,
+    channel_position_pct: channelPosition,
+  }
+}
+
+async function v5Overview(env: Env): Promise<Response> {
+  const [lifecycle, signals, trades] = await Promise.all([
+    supabaseRows(
+      env,
+      `ea_events?select=created_at,event,symbol,ea_version,balance,terminal_time,execution_mode,execution_scope,account_login,account_environment,raw_payload&ea_version=eq.${V5_EA_VERSION}&order=created_at.desc&limit=100`,
+    ),
+    supabaseRows(
+      env,
+      `signal_evals?select=created_at,symbol,eval_time,bar_h4,decision,action,block_reason,direction,entry_price,ea_version,strategy_variant,raw_payload&ea_version=eq.${V5_EA_VERSION}&strategy_variant=eq.${V5_STRATEGY_VARIANT}&order=created_at.desc&limit=500`,
+    ),
+    supabaseRows(
+      env,
+      `trades?select=created_at,symbol,position_id,ticket,order_ticket,deal_ticket,direction,open_time,open_price,lots,close_time,close_price,pnl,close_reason,ea_version,event_type,execution_mode,strategy_variant,link_status,raw_payload&ea_version=eq.${V5_EA_VERSION}&strategy_variant=eq.${V5_STRATEGY_VARIANT}&order=created_at.asc&limit=1000`,
+    ),
+  ])
+
+  if (!lifecycle.ok) return lifecycle.response
+  if (!signals.ok) return signals.response
+  if (!trades.ok) return trades.response
+
+  const signalRows = signals.rows.map((row) => ({ ...row, raw_payload: parseRawPayload(row.raw_payload) }))
+  const tradeRows = trades.rows.map((row) => ({ ...row, raw_payload: parseRawPayload(row.raw_payload) }))
+  const lifecycleRows = lifecycle.rows.map((row) => ({ ...row, raw_payload: parseRawPayload(row.raw_payload) }))
+  const latestLifecycle = lifecycleRows[0] ?? null
+  const latestRuntime = parseRawPayload(latestLifecycle?.raw_payload)
+  const allRows = [...lifecycleRows, ...signalRows, ...tradeRows]
+  const latestContactMs = allRows.reduce((latest, row) => Math.max(latest, rowTime(row)), 0)
+  const nowMs = Date.now()
+  const ageMinutes = latestContactMs > 0 ? Math.max(0, (nowMs - latestContactMs) / 60000) : null
+  const runtimeRecent = ageMinutes != null && ageMinutes <= 35 && latestLifecycle?.event !== 'ea_deinit'
+  const brokerConnected = latestRuntime?.terminal_connected !== false && String(latestRuntime?.terminal_connected ?? 'true') !== 'false'
+  const online = runtimeRecent && brokerConnected
+  const ledgerOpenPositions = tradeRows.filter((row) => row.close_time == null && row.event_type === 'open')
+
+  const managedPositionId = finiteNumber(latestRuntime?.managed_position_id)
+  const managedPositionOpenPrice = finiteNumber(latestRuntime?.managed_position_open_price)
+  const managedPositionLots = finiteNumber(latestRuntime?.managed_position_lots)
+  const managedPositionMagic = finiteNumber(latestRuntime?.managed_position_magic)
+  const managedPositionSymbol = String(latestRuntime?.managed_position_symbol ?? '')
+  const managedPositionDirection = String(latestRuntime?.managed_position_direction ?? '').toLowerCase()
+  const managedPositionOpenTime = latestRuntime?.managed_position_open_time ?? null
+
+  const runtimeOpenPositions: Record<string, unknown>[] =
+    runtimeRecent && managedPositionId != null && managedPositionId > 0 && managedPositionSymbol
+      ? [{
+          source: 'MT5_RUNTIME_SNAPSHOT',
+          symbol: managedPositionSymbol,
+          position_id: managedPositionId,
+          ticket: managedPositionId,
+          direction: managedPositionDirection,
+          open_time: managedPositionOpenTime,
+          open_price: managedPositionOpenPrice,
+          lots: managedPositionLots,
+          magic_number: managedPositionMagic,
+          close_time: null,
+          event_type: 'open',
+          ea_version: V5_EA_VERSION,
+          execution_mode: 'DEMO',
+          strategy_variant: V5_STRATEGY_VARIANT,
+          account_login: finiteNumber(latestLifecycle?.account_login ?? latestRuntime?.account_login),
+          account_environment: String(latestLifecycle?.account_environment ?? latestRuntime?.account_environment ?? 'UNKNOWN'),
+          raw_payload: latestRuntime,
+        }]
+      : []
+
+  const openPositions = runtimeRecent ? runtimeOpenPositions : ledgerOpenPositions
+  const metrics = performanceMetrics(tradeRows)
+  const cutoff24h = nowMs - 24 * 60 * 60 * 1000
+  const recentSignals = signalRows.filter((row) => rowTime(row) >= cutoff24h)
+  const uniqueSignalMap = new Map<string, Record<string, unknown>>()
+  for (const row of recentSignals) {
+    const raw = parseRawPayload(row.raw_payload)
+    const identity = String(raw?.signal_eval_id ?? `${row.symbol}-${raw?.timeframe ?? 'D1'}-${raw?.bar_time ?? row.bar_h4 ?? row.eval_time}`)
+    if (!uniqueSignalMap.has(identity)) uniqueSignalMap.set(identity, row)
+  }
+  const uniqueRecentSignals = Array.from(uniqueSignalMap.values())
+  const recentEvaluations = uniqueRecentSignals.map((row) => ({
+    symbol: row.symbol,
+    timeframe: String(parseRawPayload(row.raw_payload)?.timeframe ?? 'D1').toUpperCase(),
+    sleeve: String(parseRawPayload(row.raw_payload)?.sleeve ?? 'CORE_D1'),
+    evaluated_at: row.created_at ?? row.eval_time,
+    ...decisionEvaluation(row),
+  }))
+  const rejectedOrders = uniqueRecentSignals.filter((row) => {
+    const raw = parseRawPayload(row.raw_payload)
+    return String(raw?.order_status ?? '').includes('FAIL')
+  })
+
+  const timeframeOf = (row: Record<string, unknown>) => String(parseRawPayload(row.raw_payload)?.timeframe ?? 'D1').toUpperCase()
+  const sleeveOf = (row: Record<string, unknown>) => String(parseRawPayload(row.raw_payload)?.sleeve ?? 'CORE_D1')
+  const bySymbol = V5_SLEEVES.map((definition) => {
+    const latest = signalRows.find((row) => row.symbol === definition.symbol && timeframeOf(row) === definition.timeframe) ?? null
+    const raw = parseRawPayload(latest?.raw_payload)
+    const target = finiteNumber(raw?.target_position)
+    const current = finiteNumber(raw?.current_position)
+    const sleeveTrades = tradeRows.filter((row) => row.symbol === definition.symbol && timeframeOf(row) === definition.timeframe)
+    const symbolMetrics = performanceMetrics(sleeveTrades)
+    return {
+      ...definition,
+      ...decisionEvaluation(latest),
+      signal: target === 1 ? 'BUY' : target === -1 ? 'SELL' : 'FLAT',
+      position: current === 1 ? 'LONG' : current === -1 ? 'SHORT' : 'FLAT',
+      last_bar: raw?.bar_time ?? latest?.bar_h4 ?? null,
+      last_update: latest?.created_at ?? null,
+      order_status: raw?.order_status ?? 'NO_DATA',
+      order_message: raw?.order_message ?? null,
+      closed_trades: symbolMetrics.closed_trades,
+      realized_pnl: symbolMetrics.realized_pnl,
+      profit_factor: symbolMetrics.profit_factor,
+      win_rate: symbolMetrics.win_rate,
+    }
+  })
+  const profitableSymbols = new Set(bySymbol.filter((row) => row.realized_pnl > 0).map((row) => row.symbol)).size
+  const gateChecks = {
+    sample: metrics.closed_trades >= V5_GATE_TRADES,
+    profit_factor: metrics.profit_factor != null && metrics.profit_factor > 1.15,
+    expectancy: metrics.expectancy != null && metrics.expectancy > 0,
+    diversification: profitableSymbols >= 2,
+    execution_quality: rejectedOrders.length === 0,
+  }
+  const gatePassed = Object.values(gateChecks).every(Boolean)
+  const decision = metrics.closed_trades < V5_GATE_TRADES
+    ? 'COLLECTING_EVIDENCE'
+    : gatePassed
+      ? 'READY_FOR_RISK_DESIGN'
+      : 'REVIEW_STRATEGY'
+
+  return json({
+    ok: true,
+    generated_at: new Date(nowMs).toISOString(),
+    environment: 'DEMO',
+    expert: {
+      name: 'Portfolio Trend v5.2',
+      version: V5_EA_VERSION,
+      strategy: 'Core D1 20/10/200 + experimental H4 60/30/600',
+      timeframe: 'D1 + H4',
+      symbols: V5_SYMBOLS,
+    },
+    operational: {
+      status: online ? 'ONLINE' : runtimeRecent ? 'BROKER_OFFLINE' : latestContactMs > 0 ? 'STALE' : 'NO_TELEMETRY',
+      latest_contact: latestContactMs > 0 ? new Date(latestContactMs).toISOString() : null,
+      age_minutes: ageMinutes,
+      last_event: latestRuntime?.runtime_event ?? latestLifecycle?.event ?? null,
+      broker_connected: latestContactMs > 0 ? brokerConnected : null,
+      open_positions: openPositions.length,
+      rejected_orders_24h: rejectedOrders.length,
+      signals_24h: uniqueRecentSignals.length,
+    },
+    account: {
+      login: finiteNumber(latestLifecycle?.account_login ?? latestRuntime?.account_login),
+      environment: String(latestLifecycle?.account_environment ?? latestRuntime?.account_environment ?? 'UNKNOWN'),
+      balance: finiteNumber(latestRuntime?.balance ?? latestLifecycle?.balance),
+      equity: finiteNumber(latestRuntime?.equity),
+      floating_pnl: finiteNumber(latestRuntime?.floating_pnl),
+      free_margin: finiteNumber(latestRuntime?.free_margin),
+      leverage: finiteNumber(latestRuntime?.leverage),
+    },
+    performance: metrics,
+    symbols: bySymbol,
+    positions: openPositions.slice(0, 20).map((row) => ({ ...row, timeframe: timeframeOf(row), sleeve: sleeveOf(row) })),
+    recent_trades: tradeRows.slice(-12).reverse().map((row) => ({ ...row, timeframe: timeframeOf(row), sleeve: sleeveOf(row) })),
+    decision_flow: {
+      window_hours: 24,
+      stages: {
+        analyzed: recentEvaluations.length,
+        valid_data: recentEvaluations.filter((row) => row.valid_inputs).length,
+        entries_ready: recentEvaluations.filter((row) => row.entry_ready).length,
+        orders_attempted: recentEvaluations.filter((row) => row.order_attempted).length,
+        executed: recentEvaluations.filter((row) => row.executed).length,
+      },
+      discarded: recentEvaluations.filter((row) => row.selection_status === 'DISCARDED').length,
+      managed_positions: recentEvaluations.filter((row) => row.selection_status === 'MANAGING_POSITION').length,
+      reasons: Object.values(recentEvaluations.reduce((result, row) => {
+        const currentReason = result[row.reason_code] ?? { code: row.reason_code, label: row.discard_reason, count: 0 }
+        currentReason.count += 1
+        result[row.reason_code] = currentReason
+        return result
+      }, {} as Record<string, { code: string; label: string; count: number }>)).sort((a, b) => b.count - a.count),
+      evaluations: recentEvaluations.slice(0, 20),
+    },
+    evidence_plan: {
+      core: 'USDJPY, USDCHF y XAUUSD en D1',
+      experimental: 'XAUUSD y AMD en H4, Donchian 60/30 + SMA600',
+      estimated_closures_per_year: 32,
+      estimated_months_to_60: 23,
+      basis: 'validación histórica con costos duplicados; requiere confirmación prospectiva demo',
+    },
+    gate: {
+      target_trades: V5_GATE_TRADES,
+      progress_pct: Math.min(100, (metrics.closed_trades / V5_GATE_TRADES) * 100),
+      profitable_symbols: profitableSymbols,
+      checks: gateChecks,
+      decision,
+      passed: gatePassed,
+    },
+  })
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
@@ -514,6 +865,7 @@ export default {
       return json({
         ok: true,
         service: 'algo-trading-dashboard',
+        build: '2026-09-08-v5.2-amd-h4-dashboard',
         mode: 'read-only',
         ts: new Date().toISOString(),
       })
@@ -549,6 +901,10 @@ export default {
 
     if (url.pathname === '/api/program-status') {
       return programStatus(env)
+    }
+
+    if (url.pathname === '/api/v5-overview') {
+      return v5Overview(env)
     }
 
     return env.ASSETS.fetch(request)
