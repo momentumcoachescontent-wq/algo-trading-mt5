@@ -111,9 +111,9 @@ string IsoTime(const datetime value)
    return result+"Z";
 }
 
-bool SendWebhook(const string payload)
+bool SendWebhook(const string payload,const bool requireTelemetryLeader=true)
 {
-   if((bool)MQLInfoInteger(MQL_TESTER) || !telemetryLeader || !InpWebhookEnable || InpWebhookURL=="" || InpWebhookSecret=="")return false;
+   if((bool)MQLInfoInteger(MQL_TESTER) || (requireTelemetryLeader && !telemetryLeader) || !InpWebhookEnable || InpWebhookURL=="" || InpWebhookSecret=="")return false;
    char postData[],result[];string resultHeaders;
    StringToCharArray(payload,postData,0,StringLen(payload),CP_UTF8);
    string headers="Content-Type: application/json\r\nX-EA-Secret: "+InpWebhookSecret+"\r\n";
@@ -140,11 +140,53 @@ bool SendRuntimeTelemetry(const string runtimeEvent,const int reasonCode=-1)
       accountTradeMode==ACCOUNT_TRADE_MODE_CONTEST ? "CONTEST" :
       "UNKNOWN";
 
+   ulong managedPositionId=0;
+   string managedPositionSymbol="";
+   string managedPositionDirection="";
+   double managedPositionOpenPrice=0.0;
+   double managedPositionLots=0.0;
+   long managedPositionMagic=0;
+   datetime managedPositionOpenTime=0;
+
+   for(int p=PositionsTotal()-1;p>=0;p--)
+   {
+      ulong positionTicket=PositionGetTicket(p);
+      if(positionTicket==0)continue;
+
+      long positionMagic=PositionGetInteger(POSITION_MAGIC);
+      bool managed=false;
+
+      for(int i=0;i<ArraySize(slots);i++)
+      {
+         if((long)slots[i].magic==positionMagic)
+         {
+            managed=true;
+            break;
+         }
+      }
+
+      if(!managed)continue;
+
+      managedPositionId=positionTicket;
+      managedPositionSymbol=PositionGetString(POSITION_SYMBOL);
+      managedPositionDirection=
+         PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY ? "BUY" : "SELL";
+      managedPositionOpenPrice=PositionGetDouble(POSITION_PRICE_OPEN);
+      managedPositionLots=PositionGetDouble(POSITION_VOLUME);
+      managedPositionMagic=positionMagic;
+      managedPositionOpenTime=(datetime)PositionGetInteger(POSITION_TIME);
+      break;
+   }
+
    string eventType=runtimeEvent=="deinit"?"ea_deinit":"ea_init";
    string payload=StringFormat(
       "{\"event\":\"%s\",\"runtime_event\":\"%s\",\"symbol\":\"USDJPY\","
       "\"ea_version\":\"v5.2.0\",\"phase\":\"V5_DEMO\",\"strategy_variant\":\"portfolio_trend_v520\","
       "\"execution_mode\":\"DEMO\",\"account_login\":%I64d,\"account_environment\":\"%s\","
+      "\"managed_position_id\":%I64u,\"managed_position_symbol\":\"%s\","
+      "\"managed_position_direction\":\"%s\",\"managed_position_open_price\":%.8f,"
+      "\"managed_position_lots\":%.8f,\"managed_position_magic\":%I64d,"
+      "\"managed_position_open_time\":%s,"
       "\"order_send_allowed\":true,\"capital_enabled\":false,"
       "\"execution_scope\":{\"mode\":\"DEMO\",\"order_send_allowed\":true,\"capital_enabled\":false,\"shadow_only\":false},"
       "\"boot_id\":\"%s\",\"terminal_time\":\"%s\",\"balance\":%.2f,\"equity\":%.2f,"
@@ -152,6 +194,9 @@ bool SendRuntimeTelemetry(const string runtimeEvent,const int reasonCode=-1)
       "\"terminal_connected\":%s,\"terminal_trade_allowed\":%s,"
       "\"symbols\":\"%s\",\"timeframes\":\"D1,H4\",\"experimental_symbols\":\"%s\",\"deinit_reason_code\":%d}",
       eventType,JsonEscape(runtimeEvent),accountLogin,JsonEscape(accountEnvironment),
+      managedPositionId,JsonEscape(managedPositionSymbol),JsonEscape(managedPositionDirection),
+      managedPositionOpenPrice,managedPositionLots,managedPositionMagic,
+      managedPositionOpenTime>0?"\""+IsoTime(managedPositionOpenTime)+"\"":"null",
       JsonEscape(bootId),IsoTime(TimeCurrent()),balance,equity,floating,
       AccountInfoDouble(ACCOUNT_MARGIN_FREE),(int)AccountInfoInteger(ACCOUNT_LEVERAGE),PositionsTotal(),
       TerminalInfoInteger(TERMINAL_CONNECTED)?"true":"false",TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)?"true":"false",
@@ -165,18 +210,30 @@ bool SendTradeTelemetry(const string eventType,const V5Slot &s,const string dire
    const ulong orderTicket,const ulong dealTicket,const ulong positionId,const string signalId,
    const double openPrice,const double closePrice,const double lots,const double pnl,const datetime openTime=0)
 {
+   long accountLogin=AccountInfoInteger(ACCOUNT_LOGIN);
+   ENUM_ACCOUNT_TRADE_MODE accountTradeMode=
+      (ENUM_ACCOUNT_TRADE_MODE)AccountInfoInteger(ACCOUNT_TRADE_MODE);
+
+   string accountEnvironment=
+      accountTradeMode==ACCOUNT_TRADE_MODE_DEMO ? "DEMO" :
+      accountTradeMode==ACCOUNT_TRADE_MODE_REAL ? "REAL" :
+      accountTradeMode==ACCOUNT_TRADE_MODE_CONTEST ? "CONTEST" :
+      "UNKNOWN";
+
    string payload=StringFormat(
       "{\"event\":\"%s\",\"symbol\":\"%s\",\"timeframe\":\"%s\",\"sleeve\":\"%s\",\"direction\":\"%s\",\"ea_version\":\"v5.2.0\","
       "\"phase\":\"V5_DEMO\",\"strategy_variant\":\"portfolio_trend_v520\",\"execution_mode\":\"DEMO\","
+      "\"account_login\":%I64d,\"account_environment\":\"%s\","
       "\"magic_number\":%I64u,\"boot_id\":\"%s\",\"signal_eval_id\":\"%s\","
       "\"ticket\":%I64u,\"order_ticket\":%I64u,\"deal_ticket\":%I64u,\"position_id\":%I64u,"
       "\"open_time\":%s,\"open_price\":%.8f,\"close_price\":%s,\"lots\":%.8f,\"sl\":0,\"tp\":0,\"pnl\":%s}",
-      eventType,s.symbol,JsonEscape(StringSubstr(EnumToString(s.tf),7)),JsonEscape(s.sleeve),direction,s.magic,JsonEscape(bootId),JsonEscape(signalId),
+      eventType,s.symbol,JsonEscape(StringSubstr(EnumToString(s.tf),7)),JsonEscape(s.sleeve),direction,
+      accountLogin,JsonEscape(accountEnvironment),s.magic,JsonEscape(bootId),JsonEscape(signalId),
       eventType=="trade_open"?orderTicket:dealTicket,orderTicket,dealTicket,positionId,
       openTime>0?"\""+IsoTime(openTime)+"\"":"null",openPrice,
       closePrice>0?DoubleToString(closePrice,8):"null",lots,
       eventType=="trade_close"?DoubleToString(pnl,2):"null");
-   return SendWebhook(payload);
+   return SendWebhook(payload,false);
 }
 
 void SendSignalTelemetry(const V5Slot &s,const datetime barTime,const int current,const int target,
