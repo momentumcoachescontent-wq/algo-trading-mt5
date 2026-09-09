@@ -79,12 +79,25 @@ export function buildLifecycleRow(
   const executionMode = toText(
     firstDefined(scope?.mode, body.execution_mode, body.scope_mode, body.mode),
   );
+  const accountLogin = toNumber(
+    firstDefined(body.account_login, body.login, body.account),
+  );
+
+  const accountEnvironment = toText(
+    firstDefined(
+      body.account_environment,
+      body.environment,
+      body.account_env,
+    ),
+  );
 
   return {
     event,
     symbol: body.symbol,
     ea_version: body.ea_version,
     phase: body.phase ?? null,
+    account_login: accountLogin,
+    account_environment: accountEnvironment,
     balance: toNumber(body.balance),
     ts: receivedAt,
     deinit_reason_code:

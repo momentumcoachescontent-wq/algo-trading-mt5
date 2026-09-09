@@ -58,6 +58,52 @@ test("lifecycle handler persists enriched ea_init row", { concurrency: false }, 
   );
 });
 
+test("lifecycle handler persists demo account identity", { concurrency: false }, async (t) => {
+  const originalFetch = global.fetch;
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  let persistedRow;
+  global.fetch = async (_url, init) => {
+    persistedRow = JSON.parse(init.body);
+    return new Response(null, { status: 201 });
+  };
+
+  const response = await lifecycleRequest({
+    event: "ea_init",
+    symbol: "USDJPY",
+    ea_version: "v4.44.1",
+    phase: "Stage10-USDJPYBuyDemoChallenger",
+    execution_mode: "DEMO",
+    account_login: 5055685180,
+    account_environment: "DEMO",
+    capital_enabled: true,
+    order_send_allowed: true,
+  });
+
+  const responseBody = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(persistedRow.account_login, 5055685180);
+  assert.equal(persistedRow.account_environment, "DEMO");
+
+  assert.equal(
+    persistedRow.raw_payload.account_login,
+    5055685180,
+  );
+
+  assert.equal(
+    persistedRow.raw_payload.account_environment,
+    "DEMO",
+  );
+
+  assert.equal(
+    persistedRow.raw_payload.worker_request_id,
+    responseBody.requestId,
+  );
+});
+
 test("lifecycle Supabase rejection returns HTTP 500", { concurrency: false }, async (t) => {
   const originalFetch = global.fetch;
   t.after(() => {
