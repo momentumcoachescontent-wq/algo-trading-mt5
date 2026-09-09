@@ -66,7 +66,8 @@ test('program status keeps lifecycle and economic evidence separate', async () =
     assert.equal(payload.lifecycle[0].capital_enabled, true)
     assert.equal(payload.lifecycle[0].order_send_allowed, true)
     assert.equal(v4440.economic_gate, 'NO_ECONOMIC_SAMPLE')
-    assert.equal(payload.challengers[2].status, 'OFFLINE_RESEARCH')
+    assert.equal(payload.challengers.find((row) => row.id === 'portfolio_trend_v500').status, 'DEMO_ACTIVE_FIRST_SIGNAL_MARKET_CLOSED')
+    assert.equal(payload.challengers.find((row) => row.id === 'stage10d_donchian').status, 'OFFLINE_RESEARCH')
   } finally {
     globalThis.fetch = originalFetch
   }
