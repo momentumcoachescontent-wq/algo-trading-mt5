@@ -1,4 +1,4 @@
-import { observabilityRequest } from './observability'
+import { observabilityRequest } from './observability.ts'
 type Env = {
   ASSETS: {
     fetch(request: Request): Promise<Response>
