@@ -1,0 +1,45 @@
+.obs-root{margin:28px 0 36px;padding:25px;border:1px solid #dbe3ef;border-radius:24px;background:#fff;box-shadow:0 18px 50px rgba(15,23,42,.06);color:#0f172a}
+.obs-heading{display:flex;justify-content:space-between;align-items:start;gap:18px}
+.obs-heading h2{margin:4px 0 8px;font-size:clamp(22px,3vw,30px)}
+.obs-heading p:not(.eyebrow){margin:0 0 14px;max-width:800px;line-height:1.5;color:#475569}
+.obs-readonly{font-size:11px;letter-spacing:.12em;font-weight:800;color:#0f766e;border:1px solid #99f6e4;background:#f0fdfa;padding:9px 10px;border-radius:99px;white-space:nowrap}
+.obs-controls{display:flex;align-items:end;flex-wrap:wrap;gap:14px;background:#f8fafc;border-radius:14px;padding:14px;margin:16px 0}
+.obs-controls label{display:flex;flex-direction:column;gap:5px;color:#475569;font-size:12px;font-weight:750;min-width:128px}
+.obs-controls select{min-width:135px;max-width:230px;background:white;border:1px solid #cbd5e1;padding:9px 30px 9px 10px;border-radius:8px;color:#0f172a}
+.obs-freshness{font-size:12px;color:#64748b;margin:0 0 8px auto}
+.obs-freshness strong{color:#334155}
+.obs-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin:16px 0}
+.obs-kpi{border:1px solid #e2e8f0;border-radius:13px;background:#f8fafc;padding:12px;display:flex;flex-direction:column;gap:8px;min-height:72px}
+.obs-kpi span{font-size:11px;color:#64748b}
+.obs-kpi strong{font-size:clamp(17px,1.7vw,24px)}
+.obs-layout{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(255px,1fr);gap:14px;margin-bottom:14px}
+.obs-graphbox{border:1px solid #e2e8f0;border-radius:15px;padding:16px;min-width:0;background:white}
+.obs-section-heading{display:flex;gap:8px;justify-content:space-between;align-items:baseline;margin:0 0 14px}
+.obs-section-heading h3{font-size:15px;margin:0;color:#0f172a}
+.obs-section-heading span{font-size:11px;color:#64748b}
+.obs-chart{width:100%;min-width:0}
+.obs-chart-legend{display:flex;flex-wrap:wrap;gap:8px 14px;font-size:11px;color:#475569;margin-bottom:4px}
+.obs-chart svg{width:100%;height:auto;display:block;background:#f8fafc;border-radius:8px;overflow:visible}
+.obs-chart-note{font-size:10px;color:#64748b;line-height:1.5;margin-top:8px}
+.obs-reason{display:grid;grid-template-columns:minmax(70px,1.15fr) minmax(40px,1fr) 30px;align-items:center;gap:8px;margin:12px 0;font-size:12px;color:#475569}
+.obs-reason>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.obs-reason>div{background:#e2e8f0;border-radius:99px;height:7px;overflow:hidden}
+.obs-reason i{display:block;height:100%;background:#f59e0b;border-radius:99px}
+.obs-reason strong{text-align:right}
+.obs-lifecycle{margin-top:20px;border-top:1px solid #e2e8f0;padding-top:12px;font-size:12px;color:#475569}
+.obs-lifecycle h4{margin:0 0 8px;color:#0f172a}
+.obs-lifecycle p{margin:5px 0}
+.obs-lifecycle small{color:#64748b}
+.obs-table-scroll{overflow-x:auto}
+.obs-table-scroll table{border-collapse:collapse;width:100%;font-size:12px;text-align:left}
+.obs-table-scroll th{font-size:11px;color:#64748b;white-space:nowrap;background:#f8fafc}
+.obs-table-scroll th,.obs-table-scroll td{border-bottom:1px solid #edf2f7;padding:9px 12px}
+.obs-table-scroll td:nth-child(4){min-width:140px}
+.obs-blocked{color:#a16207}.obs-ready{color:#0369a1}
+.obs-empty{min-height:220px;border:1px dashed #cbd5e1;display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;padding:24px;color:#475569;border-radius:12px;line-height:1.5}
+.obs-empty small{max-width:450px;color:#64748b;margin-top:6px}
+.obs-warning{background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:10px 12px;color:#92400e;font-size:12px}
+.obs-muted,.obs-disclaimer{font-size:12px;color:#64748b;line-height:1.5}
+.obs-disclaimer{margin-top:14px}
+@media(max-width:900px){.obs-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.obs-layout{grid-template-columns:1fr}}
+@media(max-width:600px){.obs-root{padding:15px}.obs-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.obs-heading{flex-direction:column}.obs-controls label{flex:1}.obs-freshness{margin:0}}
