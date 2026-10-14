@@ -72,7 +72,7 @@ function MovingAverage({ candles, period, color, view, width, exponential }: {
 }
 function CandleChart({ candles, evaluations, version }: { candles: Candle[]; evaluations: Evaluation[]; version: string }) {
   const [hovered, setHovered] = useState<number | null>(null)
-  const bars = useMemo(() => candles.slice(-160).filter(c =>
+  const bars = useMemo(() => candles.slice(-260).filter(c =>
     [c.open, c.high, c.low, c.close].every(v => Number.isFinite(v))), [candles])
   if (bars.length === 0) return (
     <div className="obs-empty">
@@ -219,6 +219,24 @@ export default function ObservabilityPanel() {
           <td>{stamp(e.at)}</td><td>{e.ea_version}</td><td><b className={e.decision === 'BLOCKED' ? 'obs-blocked' : 'obs-ready'}>{e.decision}</b></td>
           <td>{e.reason ?? '—'}</td><td>{fmt(number(e.close), 5)}</td></tr>)}
         {!history.data?.evaluations.length && <tr><td colSpan={5}>Sin evaluaciones para los filtros seleccionados.</td></tr>}
+      </tbody></table></div>
+    </div>
+    <div className="obs-graphbox">
+      <div className="obs-section-heading"><h3>Operaciones registradas</h3>
+        <span>Solo lectura · muestras de trades</span></div>
+      <div className="obs-table-scroll"><table><thead><tr>
+        <th>Fecha CDMX</th><th>Activo</th><th>Versión</th><th>Dirección</th>
+        <th>Evento</th><th>PNL</th><th>Clasificación</th>
+      </tr></thead><tbody>
+        {(history.data?.trades ?? []).slice(0, 35).map((trade, i) => <tr key={String(trade.position_id) + trade.event_type + i}>
+          <td>{stamp(trade.close_time ?? trade.open_time)}</td>
+          <td>{trade.symbol}</td><td>{trade.ea_version}</td>
+          <td>{trade.direction ?? '—'}</td>
+          <td>{trade.event_type ?? '—'}</td>
+          <td>{trade.close_time || trade.event_type === 'close' ? fmt(number(trade.pnl)) : 'Abierto'}</td>
+          <td>{trade.excluded ? 'Excluido de edge' : 'Registrado'}</td>
+        </tr>)}
+        {!history.data?.trades.length && <tr><td colSpan={7}>Sin operaciones registradas para estos filtros.</td></tr>}
       </tbody></table></div>
     </div>
     <div className="obs-disclaimer">Datos observacionales de Supabase / MT5. Velas importadas de exportaciones MT5.
