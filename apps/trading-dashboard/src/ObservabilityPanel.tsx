@@ -48,23 +48,27 @@ function useEndpoint<T>(url: string, refreshMs = 60_000): State<T> {
   }, [url, refreshMs])
   return state
 }
-function MovingAverage({ candles, period, color, view, height, width }: {
+function MovingAverage({ candles, period, color, view, width, exponential }: {
   candles: Candle[]; period: number; color: string
-  view: (v: number) => number; height: number; width: number
+  view: (v: number) => number; width: number; exponential: boolean
 }) {
   const values: string[] = []
   if (candles.length < period) return null
-  let total = 0
+  let rolling = 0
+  let average = 0
+  const k = 2 / (period + 1)
   for (let i = 0; i < candles.length; i++) {
-    total += candles[i].close
-    if (i >= period) total -= candles[i - period].close
+    rolling += candles[i].close
+    if (i >= period) rolling -= candles[i - period].close
+    if (i === period - 1) average = rolling / period
+    else if (i >= period) average = exponential ? candles[i].close * k + average * (1 - k) : rolling / period
     if (i >= period - 1) {
       const x = (i + .5) * width / candles.length
-      values.push(x.toFixed(1) + ',' + view(total / period).toFixed(1))
+      values.push(x.toFixed(1) + ',' + view(average).toFixed(1))
     }
   }
   return <polyline points={values.join(' ')} fill="none" stroke={color} strokeWidth="2"
-    strokeLinejoin="round" opacity=".9" data-period={period} data-height={height} />
+    strokeLinejoin="round" opacity=".9" />
 }
 function CandleChart({ candles, evaluations, version }: { candles: Candle[]; evaluations: Evaluation[]; version: string }) {
   const [hovered, setHovered] = useState<number | null>(null)
@@ -121,7 +125,7 @@ function CandleChart({ candles, evaluations, version }: { candles: Candle[]; eva
           </rect>
         </g>
       })}
-      <MovingAverage candles={bars} period={averagePeriod} color="#d97706" height={height} width={width} view={y}/>
+      <MovingAverage candles={bars} period={averagePeriod} color="#d97706" width={width} view={y} exponential={!version.startsWith('v5')}/>
       {[...markers.entries()].map(([i, label]) =>
         <g key={i}><circle cx={(i + .5) * step} cy={Math.max(10, y(bars[i].high) - 10)}
           r="5" fill={label === 'BLOCKED' ? '#d97706' : '#2563eb'} stroke="white" strokeWidth="2">
@@ -129,7 +133,7 @@ function CandleChart({ candles, evaluations, version }: { candles: Candle[]; eva
       )}
     </svg>
     <div className="obs-chart-note">
-      {version.startsWith('v5') ? 'SMA200 orientativa calculada de las velas disponibles' : 'Media móvil simple de 21 velas, referencia visual (no EMA del EA)'} ·
+      {version.startsWith('v5') ? 'SMA200 orientativa calculada de las velas disponibles' : 'EMA21 de referencia calculada con las velas disponibles'} ·
       Los círculos identifican evaluaciones cuando hay coincidencia temporal · No se generan señales
     </div>
   </div>
@@ -188,7 +192,7 @@ export default function ObservabilityPanel() {
       <div className="obs-graphbox">
         <div className="obs-section-heading"><h3>Precio y evaluación del Expert</h3>
           <span>Última vela: {stamp(candles.data?.last_candle)}</span></div>
-        <CandleChart candles={candles.data?.rows ?? []} evaluations={history.data?.evaluations ?? []} version={version}/>
+        <CandleChart candles={candles.data?.rows ?? []} evaluations={history.data?.evaluations ?? []} version={version === 'ALL' ? versions[0] ?? 'ALL' : version}/>
       </div>
       <div className="obs-graphbox">
         <div className="obs-section-heading"><h3>Razones de bloqueo</h3><span>Frecuencia en muestra</span></div>
