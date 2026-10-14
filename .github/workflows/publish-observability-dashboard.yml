@@ -1,0 +1,63 @@
+name: Publish Expert Observability Dashboard
+
+on:
+  push:
+    branches:
+      - agent/stage10c-observability-repair
+    paths:
+      - '.github/workflows/publish-observability-dashboard.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: expert-observability-dashboard-release
+  cancel-in-progress: false
+
+jobs:
+  publish-dashboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/trading-dashboard/package-lock.json
+      - name: Install pinned dashboard dependencies
+        working-directory: apps/trading-dashboard
+        run: npm ci
+      - name: Validate dashboard and Worker before publication
+        working-directory: apps/trading-dashboard
+        run: |
+          npm run build
+          npm run test:worker
+      - name: Check Cloudflare publication prerequisites
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ACCESS_VERIFIED: ${{ vars.DASHBOARD_ACCESS_VERIFIED }}
+        run: |
+          if [ -z "$CF_TOKEN" ]; then echo '::error::Configure CLOUDFLARE_API_TOKEN in GitHub Actions secrets.'; exit 1; fi
+          if [ -z "$CF_ACCOUNT" ]; then echo '::error::Configure CLOUDFLARE_ACCOUNT_ID in GitHub Actions secrets.'; exit 1; fi
+          if [ "$ACCESS_VERIFIED" != 'true' ]; then echo '::error::Verify Cloudflare Access for production AND version URLs; then set DASHBOARD_ACCESS_VERIFIED=true in GitHub Actions variables.'; exit 1; fi
+      - name: Upload candidate version to algo-trading-dashboard (no production traffic)
+        working-directory: apps/trading-dashboard
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler versions upload --config wrangler.jsonc --message 'Expert Observability Terminal (read-only)'
+      - name: Promote to production only after explicit release approval
+        if: ${{ vars.DASHBOARD_PRODUCTION_APPROVED == 'true' }}
+        working-directory: apps/trading-dashboard
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy --config wrangler.jsonc --keep-vars
+      - name: Output deployment scope
+        run: |
+          echo 'Worker: algo-trading-dashboard'
+          echo 'Production promotion requires DASHBOARD_PRODUCTION_APPROVED=true.'
+          echo 'No modifications to algo-trading-mt5 webhook Worker or MetaTrader EAs.'
