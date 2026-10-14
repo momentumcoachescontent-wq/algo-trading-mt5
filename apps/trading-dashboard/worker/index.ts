@@ -1,3 +1,4 @@
+import { observabilityRequest } from './observability.ts'
 type Env = {
   ASSETS: {
     fetch(request: Request): Promise<Response>
@@ -860,6 +861,10 @@ async function v5Overview(env: Env): Promise<Response> {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
+
+    // Separate read-only observability API; existing routes remain untouched.
+    const observed = await observabilityRequest(request, env)
+    if (observed) return observed
 
     if (url.pathname === '/api/health') {
       return json({
