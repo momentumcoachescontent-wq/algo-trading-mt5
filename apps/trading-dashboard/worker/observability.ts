@@ -41,11 +41,14 @@ function deduplicateSignals(rows: Row[]): Row[] {
   });
 }
 const decision = (r: Row): string => {
-  const value = text(r.decision || r.action).toUpperCase();
-  if (value.includes("BLOCKED") || r.block_reason != null) return "BLOCKED";
-  if (value.includes("ENTRY_READY") || value === "ENTRY_ACCEPTED") return "ENTRY_READY";
-  if (value.includes("ERROR")) return "ERROR";
-  return value || "UNKNOWN";
+  const state = text(r.decision).toUpperCase();
+  const action = text(r.action).toUpperCase();
+  // Shadow-only entry-ready rows may contain BOTH ENTRY_READY and BLOCKED.
+  // A retained block_reason must not override an accepted entry decision.
+  if (state.includes("ENTRY_READY") || action.startsWith("ENTRY_READY") || action === "ENTRY_ACCEPTED") return "ENTRY_READY";
+  if (state.includes("ERROR") || action.includes("ERROR")) return "ERROR";
+  if (state.includes("BLOCKED") || action.includes("BLOCKED") || r.block_reason != null) return "BLOCKED";
+  return state || action || "UNKNOWN";
 };
 async function select(env: Env, table: string, columns: string, filters: Record<string, string>, limit: number): Promise<ApiResult> {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY)
@@ -102,6 +105,8 @@ function signalView(r: Row) {
   return {
     kind: "signal", symbol: r.symbol, ea_version: r.ea_version, strategy_variant: r.strategy_variant,
     timeframe: timeframe(r), at: r.eval_time ?? r.created_at,
+    // Time of the already-closed bar the EA examined, not the next-tick evaluation time.
+    bar_time: text(raw.bar_time) || text(r.bar_h4) || null,
     created_at: r.created_at, decision: decision(r),
     reason: r.block_reason ?? raw.reason_code ?? raw.order_message ?? null,
     direction: r.direction, close: numeric(raw.close),

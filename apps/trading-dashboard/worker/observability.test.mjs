@@ -82,3 +82,50 @@ test('candles return chronological rows, never synthetic prices', async () => {
     assert.equal(data.json.source, 'MT5_PASSIVE_OHLC')
   })
 })
+
+test('ENTRY_READY takes precedence over BLOCKED for shadow and accepted entries', async () => {
+  const signal = (time, decision, action, block_reason) => ({
+    ...sampleSignal, decision, action, block_reason, created_at: time,
+    raw_payload: { ...sampleSignal.raw_payload, bar_time: time },
+  })
+  await withMock(async input => {
+    if (String(input).includes('/signal_evals?')) return Response.json([
+      signal('2026-10-01T00:00:00Z', 'ENTRY_READY_SHADOW_ONLY_BLOCKED', null, 'SHADOW_ONLY'),
+      signal('2026-10-02T00:00:00Z', 'BLOCKED', 'ENTRY_ACCEPTED', 'ORDER_REJECTED'),
+      signal('2026-10-03T00:00:00Z', 'BLOCKED', null, 'NO_PULLBACK'),
+      signal('2026-10-04T00:00:00Z', 'ERROR', null, null),
+    ])
+    return Response.json([])
+  }, async () => {
+    const summary = await load('/api/observability/summary?symbol=USDJPY&timeframe=D1')
+    assert.equal(summary.status, 200)
+    assert.equal(summary.json.evaluations, 4)
+    assert.equal(summary.json.entry_ready, 2)
+    assert.equal(summary.json.blocked, 1)
+    assert.equal(summary.json.errors, 1)
+    assert.deepEqual(summary.json.blocked_reasons, [{ reason: 'NO_PULLBACK', count: 1 }])
+    const timeline = await load('/api/observability/timeline?symbol=USDJPY&timeframe=D1')
+    assert.equal(timeline.json.evaluations.filter(x => x.decision === 'ENTRY_READY').length, 2)
+  })
+})
+
+test('exposes evaluated candle timestamp separately from evaluation timestamp', async () => {
+  const signal = (time, raw, fallback) => ({
+    ...sampleSignal, created_at: time, eval_time: time, bar_h4: fallback,
+    raw_payload: { ...sampleSignal.raw_payload, ...raw },
+  })
+  await withMock(async input => {
+    if (String(input).includes('/signal_evals?')) return Response.json([
+      signal('2026-10-03T00:00:10Z', { bar_time: '2026-10-02T00:00:00Z' }, '2026-10-01T00:00:00Z'),
+      signal('2026-10-04T00:00:10Z', { bar_time: null }, '2026-10-03T00:00:00Z'),
+    ])
+    return Response.json([])
+  }, async () => {
+    const data = await load('/api/observability/timeline?symbol=USDJPY&timeframe=D1')
+    assert.equal(data.status, 200)
+    assert.equal(data.json.evaluations[0].at, '2026-10-04T00:00:10Z')
+    assert.equal(data.json.evaluations[0].bar_time, '2026-10-03T00:00:00Z')
+    assert.equal(data.json.evaluations[1].at, '2026-10-03T00:00:10Z')
+    assert.equal(data.json.evaluations[1].bar_time, '2026-10-02T00:00:00Z')
+  })
+})

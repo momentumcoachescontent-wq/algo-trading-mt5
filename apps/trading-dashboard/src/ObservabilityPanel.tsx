@@ -3,7 +3,7 @@ import './ObservabilityPanel.css'
 
 type Asset = { symbol: string; version: string; timeframe: string; strategy: string; last_seen: string }
 type Evaluation = {
-  at: string; decision: string; reason: string | null; timeframe: string; close: number | null
+  at: string; bar_time: string | null; decision: string; reason: string | null; timeframe: string; close: number | null
   ema: number | null; sma: number | null; channel_high: number | null; channel_low: number | null
   atr: number | null; order_status: string | null; ea_version: string
 }
@@ -90,7 +90,7 @@ function CandleChart({ candles, evaluations, version }: { candles: Candle[]; eva
   const selected = hovered == null ? bars[bars.length - 1] : bars[hovered]
   const markers = new Map<number, string>()
   for (const e of evaluations) {
-    const t = Date.parse(e.at)
+    const t = Date.parse(e.bar_time ?? e.at)
     if (!Number.isFinite(t)) continue
     const i = bars.findLastIndex((b, ix) => Date.parse(b.time) <= t &&
       (ix === bars.length - 1 || Date.parse(bars[ix + 1].time) > t))
