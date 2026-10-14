@@ -1,3 +1,4 @@
+import ObservabilityPanel from './ObservabilityPanel'
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 
@@ -486,6 +487,8 @@ function App() {
           avanzan cuando frecuencia, expectativa, drawdown y robustez pasan su gate.
         </p>
       </section>
+
+      <ObservabilityPanel />
 
       <section className="grid">
         <article className="card">
