@@ -1,0 +1,39 @@
+name: Observability Terminal Validation
+on:
+  push:
+    branches:
+      - feature/observability-terminal-20261013
+  pull_request:
+    paths:
+      - 'apps/trading-dashboard/**'
+      - 'python/ops/import_observability_candles.py'
+      - 'tests/test_observability_candle_import.py'
+      - 'infra/supabase/migrations/007_observability_candles.sql'
+      - '.github/workflows/observability-terminal-validation.yml'
+permissions:
+  contents: read
+jobs:
+  validate-dashboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/trading-dashboard/package-lock.json
+      - name: Install locked dependencies
+        working-directory: apps/trading-dashboard
+        run: npm ci
+      - name: Build and type-check Vite dashboard
+        working-directory: apps/trading-dashboard
+        run: npm run build
+      - name: Run existing and new Worker tests
+        working-directory: apps/trading-dashboard
+        run: npm run test:worker
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify passive MT5 candle importer
+        run: python -m unittest tests.test_observability_candle_import -v
