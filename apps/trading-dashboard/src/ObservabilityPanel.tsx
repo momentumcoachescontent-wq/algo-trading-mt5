@@ -146,6 +146,10 @@ export default function ObservabilityPanel() {
   const options = useMemo(() => assets.data?.assets ?? [], [assets.data])
   const symbols = useMemo(() => [...new Set(options.map(a => a.symbol))].sort(), [options])
   const versions = useMemo(() => [...new Set(options.filter(a => a.symbol === symbol).map(a => a.version))].sort().reverse(), [options, symbol])
+  const selectedVersion = version === 'ALL'
+    ? options.find(a => a.symbol === symbol && a.timeframe === tf)?.version ??
+      options.find(a => a.symbol === symbol)?.version ?? ''
+    : version
   const qs = new URLSearchParams({ symbol, timeframe: tf, limit: '300' })
   if (version !== 'ALL') qs.set('version', version)
   const overview = useEndpoint<Overview>('/api/observability/summary?' + qs.toString())
@@ -161,7 +165,14 @@ export default function ObservabilityPanel() {
       <p>Seguimiento histórico de las evaluaciones de MT5; esta pantalla no puede enviar ni modificar operaciones.</p>
     </div><span className="obs-readonly">READ ONLY</span></div>
     <div className="obs-controls">
-      <label>Activo <select value={symbol} onChange={e => { setSymbol(e.target.value); setVersion('ALL') }}>
+      <label>Activo <select value={symbol} onChange={e => {
+        const next = e.target.value
+        setSymbol(next)
+        setVersion('ALL')
+        if (!options.some(a => a.symbol === next && a.timeframe === tf)) {
+          setTf(options.find(a => a.symbol === next)?.timeframe === 'D1' ? 'D1' : 'H4')
+        }
+      }}>
         {!symbols.includes(symbol) && <option value={symbol}>{symbol}</option>}
         {symbols.map(x => <option value={x} key={x}>{x}</option>)}</select></label>
       <label>Versión del Expert <select value={version} onChange={e => setVersion(e.target.value)}>
@@ -192,7 +203,7 @@ export default function ObservabilityPanel() {
       <div className="obs-graphbox">
         <div className="obs-section-heading"><h3>Precio y evaluación del Expert</h3>
           <span>Última vela: {stamp(candles.data?.last_candle)}</span></div>
-        <CandleChart candles={candles.data?.rows ?? []} evaluations={history.data?.evaluations ?? []} version={version === 'ALL' ? versions[0] ?? 'ALL' : version}/>
+        <CandleChart candles={candles.data?.rows ?? []} evaluations={history.data?.evaluations ?? []} version={selectedVersion}/>
       </div>
       <div className="obs-graphbox">
         <div className="obs-section-heading"><h3>Razones de bloqueo</h3><span>Frecuencia en muestra</span></div>
