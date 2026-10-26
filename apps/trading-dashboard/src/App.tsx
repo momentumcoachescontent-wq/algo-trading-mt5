@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
+import { installWakeRefresh } from './wake-refresh.ts'
 import './App.css'
 
 type N = number | null
@@ -13,6 +14,14 @@ type Sleeve = {
   symbol: string; timeframe: string; experimental?: boolean; analysis_health?: string
   order_status?: string; order_message?: string | null; current_wait_reason?: string | null
   signal?: string; last_update?: string | null; data_issue?: string | null
+  last_bar?: string | null; discard_reason?: string | null; reason_code?: string | null
+  potential_direction?: string | null; entry_ready?: boolean; close?: N; sma?: N
+  channel_high?: N; channel_low?: N; exit_trigger_price?: N; distance_to_trigger_pct?: N
+}
+type Research = {
+  symbol?: string; timeframe?: string; status?: string; execution_enabled?: boolean
+  bar_time?: string | null; sample_returns?: N; momentum_20_pct?: N
+  annualized_volatility_pct?: N; proposal?: string
 }
 type Snapshot = {
   ok: boolean; environment?: string; expert?: { version?: string | null }
@@ -20,11 +29,13 @@ type Snapshot = {
   account?: { equity?: N; balance?: N; floating_pnl?: N; free_margin?: N }
   visibility?: { execution_input_enabled?: boolean; observation_mode?: boolean; halt_active?: boolean } | null
   external_experts?: External[]; symbols?: Sleeve[]; positions?: Position[]
+  asset_research?: Research[]
   performance?: { closed_trades?: N; realized_pnl?: N }
   account_risk?: { status?: string; complete?: boolean } | null
   evidence?: {
     account_currency?: string; reconciliation?: { status?: string }
     archive_delivery?: { state?: string; pending?: N }
+    observation_max_age_seconds?: N
   }
 }
 const expected: Sleeve[] = [
@@ -48,6 +59,8 @@ const labels: Record<string, string> = {
   WAIT_SESSION: 'Esperando sesión o cotización', ALREADY_EVALUATED: 'Vela ya evaluada',
   NOT_SENT: 'Sin solicitud enviada', NO_ACTION: 'Sin acción', OPEN_OK: 'Apertura aceptada',
   OPEN_FAIL: 'Apertura no confirmada', CLOSE_OK: 'Cierre aceptado', CLOSE_FAIL: 'Cierre no confirmado',
+  UNKNOWN: 'Sin evaluación confirmada', DESCRIPTIVE_ONLY: 'Análisis descriptivo',
+  SYMBOL_UNAVAILABLE: 'Símbolo no disponible', INSUFFICIENT_HISTORY: 'Histórico insuficiente', INVALID_HISTORY: 'Histórico por revisar',
 }
 function label(value?: string | null) { return value ? labels[value] ?? value : 'Sin dato' }
 function finite(value: unknown): number | null { return typeof value === 'number' && Number.isFinite(value) ? value : null }
@@ -62,6 +75,16 @@ function date(value?: string | null) {
   if (!value || !Number.isFinite(Date.parse(value))) return 'Sin dato'
   return new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'America/Mexico_City' }).format(new Date(value))
 }
+function barDate(value?: string | null) {
+  if (!value) return 'Sin dato'
+  // Naive bar timestamps are broker wall-clock values, not UTC observations.
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(value) ? `${value.replace('T', ' ')} · broker` : date(value)
+}
+function decimal(value: unknown, digits = 5) {
+  const n = finite(value)
+  return n == null ? 'Sin dato' : new Intl.NumberFormat('es-MX', { maximumFractionDigits: digits }).format(n)
+}
+function percent(value: unknown) { const n = finite(value); return n == null ? 'Sin dato' : `${decimal(n, 2)}%` }
 function age(value: string | null | undefined, now: number): number | null {
   if (!value) return null
   const stamp = Date.parse(value)
@@ -117,6 +140,42 @@ function GoldRush({ expert, currency, now }: { expert?: External; currency: stri
   </section>
 }
 
+function SleeveCard({ sleeve: s, current }: { sleeve: Sleeve; current: boolean }) {
+  const direction = s.potential_direction === 'BUY' ? 'Alcista' : s.potential_direction === 'SELL' ? 'Bajista' : 'Sin dirección confirmada'
+  return <article className={`sleeve ${current ? '' : 'is-stale'}`}>
+    <div className="sleeve-title"><h3>{s.symbol}</h3><span>{s.timeframe}</span></div>
+    <span className={`sleeve-kind ${s.experimental ? 'experimental' : ''}`}>{s.experimental ? 'Experimental' : 'Núcleo'}</span>
+    <p className="sleeve-health">{current ? label(s.analysis_health) : 'Último registro · vigencia sin confirmar'}</p>
+    <p className="analysis-decision"><span>{current ? 'Análisis de la última vela' : 'Análisis conservado'}</span>{s.discard_reason ?? 'Todavía no hay razonamiento de señal disponible.'}</p>
+    <dl>
+      <div><dt>Dirección del contexto</dt><dd>{direction}</dd></div>
+      <div><dt>Señal registrada</dt><dd>{s.signal === 'BUY' ? 'Compra' : s.signal === 'SELL' ? 'Venta' : s.signal === 'FLAT' ? 'Neutral' : 'Sin dato'}</dd></div>
+      <div><dt>Cierre / media SMA</dt><dd>{decimal(s.close)} / {decimal(s.sma)}</dd></div>
+      <div><dt>Canal de entrada: piso – techo</dt><dd>{decimal(s.channel_low)} – {decimal(s.channel_high)}</dd></div>
+      <div><dt>Distancia al gatillo</dt><dd>{percent(s.distance_to_trigger_pct)}</dd></div>
+      <div><dt>Estado de orden</dt><dd>{label(s.order_status)}</dd></div>
+    </dl>
+    <p className="sleeve-reason">{!current ? 'Esperando una captura reciente; la decisión conservada no confirma una oportunidad actual.' : (s.current_wait_reason ? label(s.current_wait_reason) : reason(s.order_message) || s.data_issue || 'Esperando próxima evaluación válida.')}</p>
+    <time>Vela: {barDate(s.last_bar)}</time><time>Evaluación: {date(s.last_update)}</time>
+  </article>
+}
+
+function ResearchPanel({ rows, current }: { rows: Research[]; current: boolean }) {
+  return <section className="panel research-section" aria-labelledby="research-title">
+    <div className="section-top"><div><p className="eyebrow">Fuera de las cinco mangas de ejecución</p><h2 id="research-title">Seguimiento de otros activos</h2></div><Badge tone={current ? 'muted' : 'warn'}>{current ? `${rows.length} activos recibidos` : 'Análisis conservado'}</Badge></div>
+    <p className="section-copy">Estadísticas D1 de los símbolos configurados para investigación. No son posiciones, órdenes ni activos habilitados para operar. La lista depende de los datos recibidos de MT5.</p>
+    {!current && rows.length > 0 && <div className="notice">No se confirma la vigencia de la fuente. Los escenarios y estadísticas de abajo corresponden al último registro, aunque esta página se consulte ahora.</div>}
+    <div className="research-grid">{rows.map((r, index) => <article className="research-card" key={`${r.symbol}-${r.timeframe}-${index}`}>
+      <div className="sleeve-title"><h3>{r.symbol ?? 'Sin símbolo'}</h3><span>{r.timeframe ?? 'Sin temporalidad'}</span></div>
+      <span className="research-scope">{r.execution_enabled === false ? 'Sin ejecución' : 'Alcance sin confirmar'}</span>
+      <p className="research-status">{label(r.status)}</p>
+      <dl><div><dt>Momentum de 20 velas</dt><dd>{percent(r.momentum_20_pct)}</dd></div><div><dt>Volatilidad anualizada</dt><dd>{percent(r.annualized_volatility_pct)}</dd></div><div><dt>Escenario descriptivo</dt><dd>{r.proposal === 'RESEARCH_LONG' ? 'Hipótesis alcista' : r.proposal === 'RESEARCH_SHORT' ? 'Hipótesis bajista' : r.proposal === 'WATCH' ? 'En seguimiento' : 'Sin dato'}</dd></div></dl>
+      <p className="research-foot">Muestra: {count(r.sample_returns)} retornos</p><time>Vela: {barDate(r.bar_time)}</time>
+    </article>)}</div>
+    {rows.length === 0 && <p className="empty-state">La captura recibida todavía no contiene análisis de otros activos. Esto no los habilita ni supone que no existan en MT5.</p>}
+  </section>
+}
+
 function App() {
   const [data, setData] = useState<Snapshot | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -144,12 +203,21 @@ function App() {
     void load()
     const poll = window.setInterval(() => { void load() }, 30_000)
     const clock = window.setInterval(() => setNow(Date.now()), 15_000)
-    return () => { cancelled = true; controller?.abort(); window.clearInterval(poll); window.clearInterval(clock) }
+    // Timers can be throttled or suspended with the tab/laptop. Refresh on return
+    // instead of waiting for the next background interval to become eligible.
+    const removeWakeListeners = installWakeRefresh(document, window, () => { setNow(Date.now()); setRevision(v => v + 1) })
+    const offline = () => { setNow(Date.now()); setError('El navegador indica que no hay conexión de red.') }
+    window.addEventListener('offline', offline)
+    return () => {
+      cancelled = true; controller?.abort(); window.clearInterval(poll); window.clearInterval(clock)
+      removeWakeListeners(); window.removeEventListener('offline', offline)
+    }
   }, [revision])
   const currency = data?.evidence?.account_currency ?? 'USD'
   const elapsed = age(data?.operational?.latest_contact, now)
   const validTime = elapsed != null && elapsed >= -120_000
-  const transport = error ? 'ERROR' : !data ? 'LOADING' : !validTime ? 'NO_TELEMETRY' : elapsed > 35 * 60_000 ? 'STALE' : data.operational?.status ?? 'NO_TELEMETRY'
+  const freshnessLimitMs = (finite(data?.evidence?.observation_max_age_seconds) ?? 180) * 1000
+  const transport = error ? 'ERROR' : !data ? 'LOADING' : !validTime ? 'NO_TELEMETRY' : elapsed > freshnessLimitMs ? 'STALE' : data.operational?.status ?? 'NO_TELEMETRY'
   const online = transport === 'ONLINE'
   const transportText = transport === 'ERROR' ? 'Consulta interrumpida' : transport === 'LOADING' ? 'Conectando…' : label(transport)
   const visibility = data?.visibility
@@ -159,12 +227,15 @@ function App() {
   const positions = data?.positions ?? []
   const archive = data?.evidence?.archive_delivery
   const risk = data?.account_risk
+  const research = Array.isArray(data?.asset_research) ? data.asset_research.filter(r => r && typeof r.symbol === 'string') : []
   return <main className="shell">
     <header className="masthead"><a href="#" className="brand"><span className="brand-mark">M</span><span>Momentum<span className="brand-sub">Trading / Control operativo</span></span></a><div className="masthead-status"><span className="demo-tag">Cuenta {data?.environment ?? 'sin confirmar'}</span><Badge tone={online ? 'good' : error ? 'bad' : 'warn'}>{transportText}</Badge></div></header>
     <section className="hero"><div><p className="eyebrow">Supervisión de MT5</p><h1>La cuenta y cada<br />estrategia, a la vista.</h1><p className="hero-copy">Posiciones, señales y estado de conexión con procedencia explícita. Una conexión vigente no confirma que un Expert tenga permiso para operar.</p></div><div className="freshness"><span className="freshness-icon" aria-hidden="true">↻</span><div><strong>{ago(data?.operational?.latest_contact, now)}</strong><p>Última captura · hora de México</p><time>{date(data?.operational?.latest_contact)}</time></div><button onClick={() => setRevision(v => v + 1)} aria-label="Consultar de nuevo el dashboard">Actualizar</button></div></section>
     {error && <div className="error-banner" role="alert"><strong>No se pudo actualizar el dashboard.</strong><span>{error} {data ? `Se conserva la lectura anterior de ${date(lastRead)}; no se confirma el estado actual.` : 'No hay cifras actuales confirmadas.'}</span></div>}
+    {!error && transport === 'STALE' && <div className="notice source-stale" role="status"><strong>La página responde, pero MT5 no entrega una captura reciente.</strong><span>Última captura: {date(data?.operational?.latest_contact)}. Consultar de nuevo no convierte estos datos en actuales; se espera una nueva observación del terminal y del relay.</span></div>}
     {!data && !error && <div className="loading-message" role="status">Consultando la última captura disponible…</div>}
-    <section className="account-grid" aria-label="Métricas de toda la cuenta"><Metric title="Equity de la cuenta" value={money(data?.account?.equity, currency)} note="Incluye todas las estrategias" accent /><Metric title="Balance" value={money(data?.account?.balance, currency)} note="Saldo registrado en el broker" /><Metric title="P&L flotante de cuenta" value={money(data?.account?.floating_pnl, currency)} note="No es sólo PortfolioTrend" /><Metric title="Margen libre" value={money(data?.account?.free_margin, currency)} note={`Divisa de cuenta: ${currency}`} /></section>
+    <nav className="section-nav" aria-label="Secciones del dashboard"><a href="#account-summary">Cuenta</a><a href="#portfolio-title">PortfolioTrend</a><a href="#goldrush-title">GoldRush</a><a href="#sleeves-title">Cinco mangas</a><a href="#research-title">Otros activos{research.length ? ` (${research.length})` : ''}</a></nav>
+    <section className="account-grid" id="account-summary" aria-label="Métricas de toda la cuenta"><Metric title="Equity de la cuenta" value={money(data?.account?.equity, currency)} note="Incluye todas las estrategias" accent /><Metric title="Balance" value={money(data?.account?.balance, currency)} note="Saldo registrado en el broker" /><Metric title="P&L flotante de cuenta" value={money(data?.account?.floating_pnl, currency)} note="No es sólo PortfolioTrend" /><Metric title="Margen libre" value={money(data?.account?.free_margin, currency)} note={`Divisa de cuenta: ${currency}`} /></section>
     <div className="operating-grid"><section className="panel portfolio-panel" aria-labelledby="portfolio-title"><div className="section-top"><div><p className="eyebrow">Motor multi-activo</p><h2 id="portfolio-title">PortfolioTrend</h2><span className="release">{data?.expert?.version ?? 'Versión aún sin confirmar'}</span></div><Badge tone={visibility?.execution_input_enabled === true && visibility?.observation_mode === false && !visibility?.halt_active ? 'good' : 'warn'}>{visibility?.observation_mode === true ? 'Modo observación' : 'Estado de ejecución'}</Badge></div>
       <div className={`execution-callout ${visibility?.execution_input_enabled === false ? 'execution-off' : ''}`}><span aria-hidden="true">◉</span><div><strong>{execution}</strong><p>{visibility?.execution_input_enabled === false || visibility?.observation_mode === true ? 'La telemetría puede estar conectada mientras este Expert no envía órdenes.' : 'Los permisos del terminal, los controles y una señal válida también deben cumplirse.'}</p></div></div>
       <div className="portfolio-stats"><Metric title="Posiciones propias" value={data ? count(positions.length) : 'Sin dato'} /><Metric title="Cierres atribuidos" value={count(data?.performance?.closed_trades)} /><Metric title="P&L realizado propio" value={money(data?.performance?.realized_pnl, currency)} /></div>
@@ -172,7 +243,8 @@ function App() {
       <div className="panel-foot"><span>Broker: {data?.operational?.broker_connected === true ? 'conectado en la captura' : data?.operational?.broker_connected === false ? 'desconectado' : 'sin confirmar'}</span><span>HALT: {visibility?.halt_active === true ? 'activo' : visibility?.halt_active === false ? 'no observado' : 'sin dato'}</span></div>
     </section><aside className="panel pipeline-panel"><p className="eyebrow">Integridad del flujo</p><h2>Datos con contexto</h2><div className="pipeline-item"><span>01</span><div><strong>Captura MT5</strong><p>{date(data?.operational?.latest_contact)}</p></div><Badge tone={online ? 'good' : 'warn'}>{online ? 'Vigente' : 'Sin confirmar'}</Badge></div><div className="pipeline-item"><span>02</span><div><strong>Conciliación</strong><p>{label(data?.evidence?.reconciliation?.status)}</p></div></div><div className="pipeline-item"><span>03</span><div><strong>Archivo privado</strong><p>{label(archive?.state)} · pendientes: {count(archive?.pending)}</p></div></div><div className="pipeline-item"><span>04</span><div><strong>Observación de riesgo</strong><p>{label(risk?.status)}{risk?.complete === false ? ' · cobertura incompleta' : ''}</p></div></div><p className="pipeline-note">Si falta el observador o la sonda, la exposición externa y el riesgo de cuenta siguen sin confirmar.</p></aside></div>
     <GoldRush expert={goldrush} currency={currency} now={now} />
-    <section className="panel sleeves-section" aria-labelledby="sleeves-title"><div className="section-top"><div><p className="eyebrow">Asignación de PortfolioTrend</p><h2 id="sleeves-title">Cinco mangas, una instancia</h2></div><span className="quiet">D1: 20/10 · SMA200 &nbsp; H4: 60/30 · SMA600</span></div><div className="sleeves-grid">{sleeves.map(s => <article className="sleeve" key={`${s.symbol}-${s.timeframe}`}><div className="sleeve-title"><h3>{s.symbol}</h3><span>{s.timeframe}</span></div><span className={`sleeve-kind ${s.experimental ? 'experimental' : ''}`}>{s.experimental ? 'Experimental' : 'Núcleo'}</span><p className="sleeve-health">{error ? 'Última lectura conservada' : label(s.analysis_health)}</p><dl><div><dt>Señal registrada</dt><dd>{s.signal === 'BUY' ? 'Compra' : s.signal === 'SELL' ? 'Venta' : s.signal === 'FLAT' ? 'Neutral' : 'Sin dato'}</dd></div><div><dt>Estado de orden</dt><dd>{label(s.order_status)}</dd></div></dl><p className="sleeve-reason">{reason(s.order_message) || s.data_issue || (s.current_wait_reason ? label(s.current_wait_reason) : 'Esperando próxima evaluación válida.')}</p><time>Evaluación: {date(s.last_update)}</time></article>)}</div></section>
+    <section className="panel sleeves-section" aria-labelledby="sleeves-title"><div className="section-top"><div><p className="eyebrow">Asignación de PortfolioTrend</p><h2 id="sleeves-title">Cinco mangas, una instancia</h2></div><span className="quiet">D1: 20/10 · SMA200 &nbsp; H4: 60/30 · SMA600</span></div><div className="sleeves-grid">{sleeves.map(s => <SleeveCard key={`${s.symbol}-${s.timeframe}`} sleeve={s} current={online} />)}</div></section>
+    <ResearchPanel rows={research} current={online} />
     <footer><span>Lectura automática cada 30 s · Horarios en Ciudad de México</span><span>La apertura de una posición se confirma con evidencia del broker.</span><span>Última consulta correcta: {date(lastRead)}</span></footer>
   </main>
 }

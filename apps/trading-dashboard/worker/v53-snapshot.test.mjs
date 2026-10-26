@@ -33,3 +33,34 @@ test('open session with delayed quotes is distinguished from a closed session',a
  const d=await get(s);const symbol=d.symbols.find(s=>s.symbol==='XAUUSD'&&s.timeframe==='H4');assert.equal(symbol.current_wait_reason,'QUOTE_NOT_FRESH');assert.equal(symbol.quote_age_seconds,900);
  s.sleeves[0].session_open=false;assert.equal((await get(s)).symbols.find(s=>s.symbol==='XAUUSD'&&s.timeframe==='H4').current_wait_reason,'SESSION_CLOSED');
 });
+
+test('additional research keeps unknown statistics and never becomes an execution sleeve',async()=>{
+ const s=state();s.asset_research=[{symbol:'EURUSD',timeframe:'D1',status:'DESCRIPTIVE_ONLY',execution_enabled:false,momentum_20_pct:null,proposal:'WATCH'},{symbol:'NVDA',timeframe:'D1',status:'INSUFFICIENT_HISTORY',execution_enabled:false}];
+ const d=await get(s);
+ assert.deepEqual(d.asset_research,s.asset_research);
+ assert.equal(d.asset_research[0].momentum_20_pct,null);
+ assert.equal(d.symbols.length,5);
+ assert.equal(d.symbols.some(row=>row.symbol==='EURUSD'||row.symbol==='NVDA'),false);
+ assert.equal(d.performance.realized_pnl,0);
+ s.asset_research={symbol:'EURUSD'};
+ assert.deepEqual((await get(s)).asset_research,[]);
+});
+
+test('frequent modern capture becomes stale after three minutes despite a fresh database receipt',async()=>{
+ const s=state();s.release_id='v5.4.6-demo-candidate';s.visibility={local_capture:true};s.observed_at=new Date(Date.now()-4*60000).toISOString();
+ const d=await get(s);
+ assert.equal(d.operational.status,'STALE');
+ assert.equal(d.evidence.observation_max_age_seconds,180);
+ assert.equal(d.evidence.analysis_current,false);
+ assert.ok(d.symbols.every(row=>row.analysis_health==='STALE'));
+ const legacy=state();legacy.observed_at=new Date(Date.now()-4*60000).toISOString();
+ assert.equal((await get(legacy)).evidence.observation_max_age_seconds,2100);
+});
+
+test('future observation time and missing analysis do not invent liveness or a flat signal',async()=>{
+ const s=state();s.observed_at=new Date(Date.now()+15*60000).toISOString();s.sleeves=[];
+ const d=await get(s);
+ assert.equal(d.operational.status,'STALE');
+ assert.ok(d.symbols.every(row=>row.signal==='UNKNOWN'&&row.position==='UNKNOWN'));
+ assert.deepEqual(d.asset_research,[]);
+});

@@ -749,7 +749,11 @@ async function v5Overview(env: Env): Promise<Response> {
   const nowMs = Date.now()
   const ageMinutes = latestContactMs > 0 ? Math.max(0, (nowMs - latestContactMs) / 60000) : null
   const stopped = latestRuntime?.runtime_event === 'deinit' || latestLifecycle?.event === 'ea_deinit'
-  const runtimeRecent = ageMinutes != null && ageMinutes <= 35 && !stopped
+  // Modern local capture is bounded to one minute. Do not keep a stopped relay
+  // looking live for the legacy 35-minute heartbeat window.
+  const boundedCapture = modern && latestRuntime?.visibility?.local_capture === true
+  const observationMaxAgeSeconds = boundedCapture ? 180 : 35 * 60
+  const runtimeRecent = ageMinutes != null && ageMinutes <= observationMaxAgeSeconds / 60 && latestContactMs <= nowMs + 120000 && !stopped
   const brokerConnected = latestRuntime?.terminal_connected !== false && String(latestRuntime?.terminal_connected ?? 'true') !== 'false'
   const online = runtimeRecent && brokerConnected
   const ledgerOpenPositions = tradeRows.filter((row) => row.close_time == null && row.event_type === 'open')
@@ -845,8 +849,8 @@ async function v5Overview(env: Env): Promise<Response> {
       entry_lookback: health?.entry_lookback ?? null,
       exit_lookback: health?.exit_lookback ?? null,
       sma_period: health?.sma_period ?? null,
-      signal: target === 1 ? 'BUY' : target === -1 ? 'SELL' : 'FLAT',
-      position: current === 1 ? 'LONG' : current === -1 ? 'SHORT' : 'FLAT',
+      signal: target === 1 ? 'BUY' : target === -1 ? 'SELL' : target === 0 ? 'FLAT' : 'UNKNOWN',
+      position: current === 1 ? 'LONG' : current === -1 ? 'SHORT' : current === 0 ? 'FLAT' : 'UNKNOWN',
       last_bar: raw?.bar_time ?? latest?.bar_h4 ?? null,
       last_update: latest?.created_at ?? null,
       order_status: raw?.order_status ?? 'NO_DATA',
@@ -905,7 +909,7 @@ async function v5Overview(env: Env): Promise<Response> {
       leverage: finiteNumber(latestRuntime?.leverage),
     },
     performance: { ...metrics, max_drawdown: metrics.closed_trades ? metrics.max_drawdown : null },
-    dashboard_version: 'portfolio-risk-p1-20261010',
+    dashboard_version: 'refresh-analysis-20261026',
     visibility: modern ? latestRuntime?.visibility ?? null : null,
     account_risk: modern ? { ...(latestRuntime?.account_risk ?? {exposures:[],complete:false}), portfolio: buildPortfolioRisk(latestRuntime?.account_risk ?? null, latestRuntime ?? null, nowMs, riskHistory) } : null,
     external_experts: modern && Array.isArray(latestRuntime?.external_experts) ? latestRuntime.external_experts : [],
@@ -917,6 +921,7 @@ async function v5Overview(env: Env): Promise<Response> {
       economic_evidence: 'INSUFFICIENT_OR_UNVALIDATED',
     },
     kronos: modern ? latestRuntime?.kronos ?? null : null,
+    asset_research: modern && Array.isArray(latestRuntime?.asset_research) ? latestRuntime.asset_research : [],
     demo_analysis: modern ? latestRuntime?.demo_analysis ?? null : null,
     shadow_review: modern ? latestRuntime?.shadow_review ?? null : null,
     weekly: modern ? latestRuntime?.weekly ?? null : null,
@@ -927,6 +932,7 @@ async function v5Overview(env: Env): Promise<Response> {
       reconciliation,
       certified: reconciled, // Compatibility alias: accounting only, never statistical certification.
       accounting_reconciled: reconciled,
+      observation_max_age_seconds: observationMaxAgeSeconds,
       analysis_current: online && bySymbol.every(s => s.coverage_ok && s.feed_ok),
       covered_sleeves: bySymbol.filter(s => s.coverage_ok).length,
       current_sleeves: online ? bySymbol.filter(s => s.coverage_ok && s.feed_ok).length : 0,
@@ -990,9 +996,9 @@ async function cachedV5Overview(request: Request, env: Env): Promise<Response> {
   if (request.method !== 'GET') return json({ ok: false, error: 'Method not allowed' }, 405)
   const keyUrl = new URL(request.url)
   keyUrl.search = ''
-  keyUrl.pathname = '/api/v5-overview/cache-v546-external-account/' + new URL(env.SUPABASE_URL).hostname
+  keyUrl.pathname = '/api/v5-overview/cache-refresh-analysis-20261026/' + new URL(env.SUPABASE_URL).hostname
   const cacheKey = new Request(keyUrl, { method: 'GET' })
-  const edgeCache = typeof caches !== 'undefined' ? await caches.open('dashboard-v546-30s') : null
+  const edgeCache = typeof caches !== 'undefined' ? await caches.open('dashboard-refresh-analysis-20261026') : null
   const hit = edgeCache ? await edgeCache.match(cacheKey) : undefined
   if (hit) {
     const headers = new Headers(hit.headers)
@@ -1024,7 +1030,7 @@ export default {
       return json({
         ok: true,
         service: 'algo-trading-dashboard',
-        build: '2026-10-25-v546-external-account',
+        build: '2026-10-26-refresh-analysis',
         mode: 'read-only',
         ts: new Date().toISOString(),
       })
