@@ -9,3 +9,4 @@
 .activity-summary{font-size:11px;line-height:1.65;color:#63765c;background:#f5f8f0;padding:11px 13px;border-radius:8px}.external-history{display:grid;grid-template-columns:1fr 1fr;gap:12px}.external-history .metric{background:#fafbf8}.external-history .metric strong{font-size:23px}@media(max-width:540px){.external-history{grid-template-columns:1fr}}
 @media(max-width:1100px){.research-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:540px){.research-grid{grid-template-columns:1fr}.research-card{padding:17px}.analysis-decision{font-size:11px}}
+.research-coverage{font-size:12px;display:grid;gap:10px}.research-coverage>div{display:flex;justify-content:space-between;gap:16px;border-bottom:1px solid #e7ecdf;padding:9px 0}.research-coverage dt{color:#63765c}.research-coverage dd{margin:0;text-align:right}

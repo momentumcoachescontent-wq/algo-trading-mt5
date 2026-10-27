@@ -32,6 +32,7 @@ type Snapshot = {
   visibility?: { execution_input_enabled?: boolean; observation_mode?: boolean; halt_active?: boolean } | null
   external_experts?: External[]; symbols?: Sleeve[]; positions?: Position[]
   asset_research?: Research[]
+  research_evidence?: ResearchEvidence | null
   performance?: { closed_trades?: N; realized_pnl?: N }
   account_risk?: { status?: string; complete?: boolean } | null
   evidence?: {
@@ -39,6 +40,13 @@ type Snapshot = {
     archive_delivery?: { state?: string; pending?: N }
     observation_max_age_seconds?: N
   }
+}
+type ResearchEvidence = {
+  status?: string; freshness?: string; as_of_utc?: string | null; generated_at_utc?: string | null
+  decision_count?: N; entry_candidate_count?: N; linked_closed_trades?: N; unlinked_execution_events?: N
+  mature_hypothetical_outcomes?: N; active_release_id?: string | null; source_candidate?: string | null
+  source_candidate_active?: boolean
+  feature_coverage?: Record<string, { known?: N; total?: N }>
 }
 const expected: Sleeve[] = [
   { symbol: 'USDJPY', timeframe: 'D1' }, { symbol: 'USDCHF', timeframe: 'D1' },
@@ -181,6 +189,17 @@ function ResearchPanel({ rows, current }: { rows: Research[]; current: boolean }
   </section>
 }
 
+function ResearchEvidencePanel({ row }: { row?: ResearchEvidence | null }) {
+  const fresh = row?.freshness === 'AT_RECORDED_CUTOFF'
+  return <section className="panel research-section" aria-labelledby="research-evidence-title"><div className="section-top"><div><p className="eyebrow">Decisiones y resultados</p><h2 id="research-evidence-title">Evidencia para mejorar la estrategia</h2></div><Badge tone={fresh ? 'good' : 'warn'}>{!row ? 'Dataset pendiente' : fresh ? 'Dataset al corte indicado' : 'Vigencia sin confirmar'}</Badge></div>
+    <p className="section-copy">Dataset de investigación generado bajo demanda. El refresco de esta página no reconstruye el dataset. Los resultados hipotéticos se mantienen separados de las operaciones reales; esta información no cambia entradas ni lotajes.</p>
+    {row ? <><div className="external-metrics"><Metric title="Decisiones únicas" value={count(row.decision_count)} note="No son snapshots ni operaciones" /><Metric title="Candidatos de entrada" value={count(row.entry_candidate_count)} note="No confirman una orden enviada" /><Metric title="Cierres vinculados" value={count(row.linked_closed_trades)} note="Sólo enlaces explícitos a decisiones" /></div>
+      <p className="notice">Sin validación de rentabilidad. Los datos disponibles todavía deben superar una comparación temporal con costes y evidencia suficiente.</p>
+      <details><summary>Cobertura y procedencia de investigación</summary><p className="section-copy">Versión observada al corte: {row.active_release_id ?? 'Sin confirmar'}. Instrumentación candidata: {row.source_candidate ?? 'Sin confirmar'} · {row.source_candidate_active === true ? 'Observada en este dataset' : 'Todavía no observada en este dataset'}.</p><dl className="research-coverage">{[['atr', 'ATR'], ['spread_atr_ratio', 'Spread / ATR'], ['entry_distance_atr', 'Distancia al canal / ATR'], ['htf_context', 'Contexto de temporalidad superior']].map(([key, name]) => <div key={key}><dt>{name}</dt><dd>{count(row.feature_coverage?.[key]?.known)} / {count(row.feature_coverage?.[key]?.total)} decisiones</dd></div>)}</dl><p className="section-copy">Eventos de ejecución sin vínculo: {count(row.unlinked_execution_events)}. Resultados hipotéticos maduros: {count(row.mature_hypothetical_outcomes)}. Los desconocidos no equivalen a cero.</p></details>
+      <div className="panel-foot"><span>Datos hasta: {date(row.as_of_utc)}</span><span>Dataset generado: {date(row.generated_at_utc)}</span></div></> : <p className="empty-state">Esperando un resumen verificable del dataset. No se infiere una mejora de estrategia a partir de la conexión o del número de capturas.</p>}
+  </section>
+}
+
 function App() {
   const [data, setData] = useState<Snapshot | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -250,6 +269,7 @@ function App() {
     </section><aside className="panel pipeline-panel"><p className="eyebrow">Integridad del flujo</p><h2>Datos con contexto</h2><div className="pipeline-item"><span>01</span><div><strong>Captura MT5</strong><p>{date(data?.operational?.latest_contact)}</p></div><Badge tone={online ? 'good' : 'warn'}>{online ? 'Vigente' : 'Sin confirmar'}</Badge></div><div className="pipeline-item"><span>02</span><div><strong>Conciliación</strong><p>{label(data?.evidence?.reconciliation?.status)}</p></div></div><div className="pipeline-item"><span>03</span><div><strong>Archivo privado</strong><p>{label(archive?.state)} · pendientes en esa captura: {count(archive?.pending)}</p><p>Estado al formar la captura, antes del acuse de su propia entrega; no confirma un atasco actual.</p></div></div><div className="pipeline-item"><span>04</span><div><strong>Observación de riesgo</strong><p>{label(risk?.status)}{risk?.complete === false ? ' · cobertura incompleta' : ''}</p></div></div><p className="pipeline-note">Si falta el observador o la sonda, la exposición externa y el riesgo de cuenta siguen sin confirmar.</p></aside></div>
     <section aria-labelledby="external-experts-title"><div className="section-top"><div><p className="eyebrow">Fuentes externas recibidas</p><h2 id="external-experts-title">Experts externos</h2></div><span className="quiet">Observar una cuenta no acredita ejecución del EA.</span></div>{externalExperts.length ? externalExperts.map((expert, index) => <ExternalPanel key={expert.id ?? index} expert={expert} currency={currency} now={now} />) : <ExternalPanel currency={currency} now={now} />}</section>
     <section className="panel sleeves-section" aria-labelledby="sleeves-title"><div className="section-top"><div><p className="eyebrow">Asignación de PortfolioTrend</p><h2 id="sleeves-title">Cinco mangas, una instancia</h2></div><span className="quiet">D1: 20/10 · SMA200 &nbsp; H4: 60/30 · SMA600</span></div><div className="sleeves-grid">{sleeves.map(s => <SleeveCard key={`${s.symbol}-${s.timeframe}`} sleeve={s} current={online} />)}</div></section>
+    <ResearchEvidencePanel row={data?.research_evidence} />
     <ResearchPanel rows={research} current={online} />
     <footer><span>Lectura automática cada 30 s · Horarios en Ciudad de México</span><span>La apertura de una posición se confirma con evidencia del broker.</span><span>Última consulta correcta: {date(lastRead)}</span></footer>
   </main>
