@@ -6,9 +6,11 @@ import './App.css'
 type N = number | null
 type Position = { symbol?: string; direction?: string; type?: number; lots?: N; volume?: N; price?: N; sl?: N; tp?: N; pnl?: N }
 type External = {
-  id?: string; status?: string; observed_at?: string | null; open_positions?: N
+  id?: string; name?: string; symbol?: string; timeframe?: string; status?: string; observed_at?: string | null; open_positions?: N
   pending_orders?: Position[] | null; positions?: Position[]; floating_pnl?: N
   history_complete?: boolean; issues?: string[]
+  attribution_basis?: string; expert_running_verified?: boolean; evaluation_started_at?: string | null
+  realized_cash_pnl?: N; performance?: { closed_trades?: N }; trades?: unknown[]
 }
 type Sleeve = {
   symbol: string; timeframe: string; experimental?: boolean; analysis_health?: string
@@ -25,7 +27,7 @@ type Research = {
 }
 type Snapshot = {
   ok: boolean; environment?: string; expert?: { version?: string | null }
-  operational?: { status?: string; latest_contact?: string | null; broker_connected?: boolean | null }
+  operational?: { status?: string; latest_contact?: string | null; broker_connected?: boolean | null; evaluations_24h?: N; entry_signals_24h?: N }
   account?: { equity?: N; balance?: N; floating_pnl?: N; free_margin?: N }
   visibility?: { execution_input_enabled?: boolean; observation_mode?: boolean; halt_active?: boolean } | null
   external_experts?: External[]; symbols?: Sleeve[]; positions?: Position[]
@@ -56,6 +58,7 @@ const labels: Record<string, string> = {
   RISK_BLOCKED: 'Bloqueado por control de riesgo', RECONCILED: 'Conciliación correcta',
   IDLE: 'Al día', DELIVERED: 'Entrega confirmada', DISABLED: 'Deshabilitado', RETRY_PENDING: 'Reintento pendiente',
   MISSING: 'Sin registro recibido',
+  STAGED: 'Encolado al crear la captura',
   WAIT_SESSION: 'Esperando sesión o cotización', ALREADY_EVALUATED: 'Vela ya evaluada',
   NOT_SENT: 'Sin solicitud enviada', NO_ACTION: 'Sin acción', OPEN_OK: 'Apertura aceptada',
   OPEN_FAIL: 'Apertura no confirmada', CLOSE_OK: 'Cierre aceptado', CLOSE_FAIL: 'Cierre no confirmado',
@@ -121,21 +124,23 @@ function PositionCards({ rows, empty, currency, pending = false }: { rows: Posit
     </div>
   })}</div> : <p className="empty-state">{empty}</p>
 }
-function GoldRush({ expert, currency, now }: { expert?: External; currency: string; now: number }) {
+function ExternalPanel({ expert, currency, now }: { expert?: External; currency: string; now: number }) {
   const elapsed = age(expert?.observed_at, now)
   const fresh = elapsed != null && elapsed >= -120_000 && elapsed <= 120_000
   const status = expert?.status === 'OBSERVING' && !fresh ? 'STALE' : expert?.status ?? 'MISSING'
   const pending = Array.isArray(expert?.pending_orders) ? expert.pending_orders : null
   const positions = Array.isArray(expert?.positions) ? expert.positions : []
-  return <section className="panel external-panel" aria-labelledby="goldrush-title">
-    <div className="section-top"><div><p className="eyebrow">Expert externo · XAUUSD / H1</p><h2 id="goldrush-title">HobbieCode GoldRush</h2></div><Badge tone={status === 'OBSERVING' ? 'good' : 'warn'}>{label(status)}</Badge></div>
-    <p className="section-copy">Sus posiciones y pendientes se observan por separado de PortfolioTrend. El total de la cuenta puede incluir ambos Experts.</p>
+  const titleId = !expert || expert.id === 'hobbiecode_goldrush' ? 'goldrush-title' : `external-${expert.id ?? 'unverified'}`
+  return <section className="panel external-panel" aria-labelledby={titleId}>
+    <div className="section-top"><div><p className="eyebrow">Expert externo · {expert ? expert.symbol ?? 'Símbolo sin confirmar' : 'XAUUSD'} / {expert ? expert.timeframe ?? 'Temporalidad sin confirmar' : 'H1'}</p><h2 id={titleId}>{expert ? expert.name ?? 'Expert externo sin identidad' : 'HobbieCode GoldRush'}</h2></div><Badge tone={status === 'OBSERVING' ? 'good' : 'warn'}>{label(status)}</Badge></div>
+    <p className="section-copy">Posiciones y pendientes atribuidas por separado de PortfolioTrend. {expert?.attribution_basis === 'CONFIGURED_MAGIC' ? 'Atribución por magic configurado; no acredita una operación nueva.' : expert?.attribution_basis === 'BROKER_ORDER_LINK' ? 'Identidad vinculada mediante evidencia de órdenes del broker.' : 'La identidad depende de la evidencia recibida.'} {expert?.expert_running_verified !== true && 'El observador no confirma que este EA esté ejecutándose.'}</p>
     <div className="external-metrics"><Metric title="Posiciones abiertas" value={count(expert?.open_positions)} note={finite(expert?.open_positions) != null ? 'Atribuidas al Expert' : 'Sin captura completa atribuible'} /><Metric title="Órdenes pendientes" value={pending ? count(pending.length) : 'Sin dato'} note="Todavía no son posiciones" /><Metric title="P&L flotante" value={money(expert?.floating_pnl, currency)} note="Posiciones atribuidas + swap" /></div>
-    {(status === 'WAITING_FOR_OBSERVER' || status === 'MISSING') && <div className="notice">Falta una captura de AccountEvidenceObserver. Una apertura reportada en MT5 aún puede no aparecer aquí; los valores desconocidos no equivalen a cero.</div>}
-    {status === 'WAITING_FOR_IDENTITY' && <div className="notice">La cuenta ya se observa, pero falta confirmar qué operaciones pertenecen a GoldRush.</div>}
+    {(status === 'WAITING_FOR_OBSERVER' || status === 'MISSING') && <div className="notice">Falta una captura del observador de cuenta. Una apertura reportada en MT5 aún puede no aparecer aquí; los valores desconocidos no equivalen a cero.</div>}
+    {status === 'WAITING_FOR_IDENTITY' && <div className="notice">La cuenta ya se observa, pero falta confirmar qué operaciones pertenecen a este Expert.</div>}
     {status === 'STALE' && <div className="notice">La captura del observador está vencida. Estas cifras corresponden a la última observación, no al estado actual confirmado.</div>}
     <div className="split-detail"><div><h3>Posiciones</h3><PositionCards rows={positions} currency={currency} empty={expert?.open_positions === 0 ? 'La última captura atribuida no contiene posiciones abiertas.' : 'Sin detalle de posiciones verificado.'} /></div><div><h3>Pendientes</h3><PositionCards rows={pending ?? []} pending currency={currency} empty={pending ? 'La última captura no contiene pendientes atribuidas.' : 'Pendientes aún desconocidas.'} /></div></div>
     <div className="panel-foot"><span>Captura: {date(expert?.observed_at)} · {ago(expert?.observed_at, now)}</span><span>{expert?.history_complete === true ? 'Historial completo declarado' : 'Historial sin confirmar'}</span></div>
+    <details><summary>Historial atribuido · {count(expert?.performance?.closed_trades)} cierres</summary><p className="section-copy">Periodo registrado: desde {date(expert?.evaluation_started_at)} hasta la captura de {date(expert?.observed_at)}. Estos cierres no se atribuyen automáticamente a hoy o ayer.</p><div className="external-history"><Metric title="Cierres del historial" value={count(expert?.performance?.closed_trades)} /><Metric title="Resultado realizado en deals" value={money(expert?.realized_cash_pnl, currency)} note="Incluye costes y cierres parciales; no sólo posiciones completamente cerradas" /></div></details>
     {expert?.issues?.length ? <details><summary>Revisiones de atribución ({expert.issues.length})</summary><ul>{expert.issues.map(issue => <li key={issue}>{issue}</li>)}</ul></details> : null}
   </section>
 }
@@ -222,7 +227,7 @@ function App() {
   const transportText = transport === 'ERROR' ? 'Consulta interrumpida' : transport === 'LOADING' ? 'Conectando…' : label(transport)
   const visibility = data?.visibility
   const execution = visibility?.halt_active === true ? 'HALT persistente' : visibility?.execution_input_enabled === false || visibility?.observation_mode === true ? 'Órdenes deshabilitadas por parámetros' : visibility?.execution_input_enabled === true ? 'Permiso por parámetros habilitado' : 'Permiso de ejecución sin verificar'
-  const goldrush = data?.external_experts?.find(e => e.id === 'hobbiecode_goldrush')
+  const externalExperts = Array.isArray(data?.external_experts) ? data.external_experts.filter(e => e && typeof e === 'object') : []
   const sleeves = data?.symbols?.length ? data.symbols : expected
   const positions = data?.positions ?? []
   const archive = data?.evidence?.archive_delivery
@@ -234,15 +239,16 @@ function App() {
     {error && <div className="error-banner" role="alert"><strong>No se pudo actualizar el dashboard.</strong><span>{error} {data ? `Se conserva la lectura anterior de ${date(lastRead)}; no se confirma el estado actual.` : 'No hay cifras actuales confirmadas.'}</span></div>}
     {!error && transport === 'STALE' && <div className="notice source-stale" role="status"><strong>La página responde, pero MT5 no entrega una captura reciente.</strong><span>Última captura: {date(data?.operational?.latest_contact)}. Consultar de nuevo no convierte estos datos en actuales; se espera una nueva observación del terminal y del relay.</span></div>}
     {!data && !error && <div className="loading-message" role="status">Consultando la última captura disponible…</div>}
-    <nav className="section-nav" aria-label="Secciones del dashboard"><a href="#account-summary">Cuenta</a><a href="#portfolio-title">PortfolioTrend</a><a href="#goldrush-title">GoldRush</a><a href="#sleeves-title">Cinco mangas</a><a href="#research-title">Otros activos{research.length ? ` (${research.length})` : ''}</a></nav>
+    <nav className="section-nav" aria-label="Secciones del dashboard"><a href="#account-summary">Cuenta</a><a href="#portfolio-title">PortfolioTrend</a><a href="#external-experts-title">Experts externos{externalExperts.length ? ` (${externalExperts.length})` : ''}</a><a href="#sleeves-title">Cinco mangas</a><a href="#research-title">Otros activos{research.length ? ` (${research.length})` : ''}</a></nav>
     <section className="account-grid" id="account-summary" aria-label="Métricas de toda la cuenta"><Metric title="Equity de la cuenta" value={money(data?.account?.equity, currency)} note="Incluye todas las estrategias" accent /><Metric title="Balance" value={money(data?.account?.balance, currency)} note="Saldo registrado en el broker" /><Metric title="P&L flotante de cuenta" value={money(data?.account?.floating_pnl, currency)} note="No es sólo PortfolioTrend" /><Metric title="Margen libre" value={money(data?.account?.free_margin, currency)} note={`Divisa de cuenta: ${currency}`} /></section>
     <div className="operating-grid"><section className="panel portfolio-panel" aria-labelledby="portfolio-title"><div className="section-top"><div><p className="eyebrow">Motor multi-activo</p><h2 id="portfolio-title">PortfolioTrend</h2><span className="release">{data?.expert?.version ?? 'Versión aún sin confirmar'}</span></div><Badge tone={visibility?.execution_input_enabled === true && visibility?.observation_mode === false && !visibility?.halt_active ? 'good' : 'warn'}>{visibility?.observation_mode === true ? 'Modo observación' : 'Estado de ejecución'}</Badge></div>
       <div className={`execution-callout ${visibility?.execution_input_enabled === false ? 'execution-off' : ''}`}><span aria-hidden="true">◉</span><div><strong>{execution}</strong><p>{visibility?.execution_input_enabled === false || visibility?.observation_mode === true ? 'La telemetría puede estar conectada mientras este Expert no envía órdenes.' : 'Los permisos del terminal, los controles y una señal válida también deben cumplirse.'}</p></div></div>
       <div className="portfolio-stats"><Metric title="Posiciones propias" value={data ? count(positions.length) : 'Sin dato'} /><Metric title="Cierres atribuidos" value={count(data?.performance?.closed_trades)} /><Metric title="P&L realizado propio" value={money(data?.performance?.realized_pnl, currency)} /></div>
-      <PositionCards rows={positions} currency={currency} empty={data ? 'La captura de PortfolioTrend no contiene posiciones propias. Esto no descarta exposición de GoldRush.' : 'Esperando captura de posiciones.'} />
+      <p className="activity-summary">Últimas 24 h de observaciones disponibles: <strong>{count(data?.operational?.evaluations_24h)}</strong> evaluaciones registradas · <strong>{count(data?.operational?.entry_signals_24h)}</strong> señales de entrada. Una evaluación neutral no es una orden.</p>
+      <PositionCards rows={positions} currency={currency} empty={data ? 'La captura de PortfolioTrend no contiene posiciones propias. Esto no descarta exposición de otros Experts.' : 'Esperando captura de posiciones.'} />
       <div className="panel-foot"><span>Broker: {data?.operational?.broker_connected === true ? 'conectado en la captura' : data?.operational?.broker_connected === false ? 'desconectado' : 'sin confirmar'}</span><span>HALT: {visibility?.halt_active === true ? 'activo' : visibility?.halt_active === false ? 'no observado' : 'sin dato'}</span></div>
-    </section><aside className="panel pipeline-panel"><p className="eyebrow">Integridad del flujo</p><h2>Datos con contexto</h2><div className="pipeline-item"><span>01</span><div><strong>Captura MT5</strong><p>{date(data?.operational?.latest_contact)}</p></div><Badge tone={online ? 'good' : 'warn'}>{online ? 'Vigente' : 'Sin confirmar'}</Badge></div><div className="pipeline-item"><span>02</span><div><strong>Conciliación</strong><p>{label(data?.evidence?.reconciliation?.status)}</p></div></div><div className="pipeline-item"><span>03</span><div><strong>Archivo privado</strong><p>{label(archive?.state)} · pendientes: {count(archive?.pending)}</p></div></div><div className="pipeline-item"><span>04</span><div><strong>Observación de riesgo</strong><p>{label(risk?.status)}{risk?.complete === false ? ' · cobertura incompleta' : ''}</p></div></div><p className="pipeline-note">Si falta el observador o la sonda, la exposición externa y el riesgo de cuenta siguen sin confirmar.</p></aside></div>
-    <GoldRush expert={goldrush} currency={currency} now={now} />
+    </section><aside className="panel pipeline-panel"><p className="eyebrow">Integridad del flujo</p><h2>Datos con contexto</h2><div className="pipeline-item"><span>01</span><div><strong>Captura MT5</strong><p>{date(data?.operational?.latest_contact)}</p></div><Badge tone={online ? 'good' : 'warn'}>{online ? 'Vigente' : 'Sin confirmar'}</Badge></div><div className="pipeline-item"><span>02</span><div><strong>Conciliación</strong><p>{label(data?.evidence?.reconciliation?.status)}</p></div></div><div className="pipeline-item"><span>03</span><div><strong>Archivo privado</strong><p>{label(archive?.state)} · pendientes en esa captura: {count(archive?.pending)}</p><p>Estado al formar la captura, antes del acuse de su propia entrega; no confirma un atasco actual.</p></div></div><div className="pipeline-item"><span>04</span><div><strong>Observación de riesgo</strong><p>{label(risk?.status)}{risk?.complete === false ? ' · cobertura incompleta' : ''}</p></div></div><p className="pipeline-note">Si falta el observador o la sonda, la exposición externa y el riesgo de cuenta siguen sin confirmar.</p></aside></div>
+    <section aria-labelledby="external-experts-title"><div className="section-top"><div><p className="eyebrow">Fuentes externas recibidas</p><h2 id="external-experts-title">Experts externos</h2></div><span className="quiet">Observar una cuenta no acredita ejecución del EA.</span></div>{externalExperts.length ? externalExperts.map((expert, index) => <ExternalPanel key={expert.id ?? index} expert={expert} currency={currency} now={now} />) : <ExternalPanel currency={currency} now={now} />}</section>
     <section className="panel sleeves-section" aria-labelledby="sleeves-title"><div className="section-top"><div><p className="eyebrow">Asignación de PortfolioTrend</p><h2 id="sleeves-title">Cinco mangas, una instancia</h2></div><span className="quiet">D1: 20/10 · SMA200 &nbsp; H4: 60/30 · SMA600</span></div><div className="sleeves-grid">{sleeves.map(s => <SleeveCard key={`${s.symbol}-${s.timeframe}`} sleeve={s} current={online} />)}</div></section>
     <ResearchPanel rows={research} current={online} />
     <footer><span>Lectura automática cada 30 s · Horarios en Ciudad de México</span><span>La apertura de una posición se confirma con evidencia del broker.</span><span>Última consulta correcta: {date(lastRead)}</span></footer>

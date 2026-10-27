@@ -639,7 +639,7 @@ function decisionEvaluation(row: Record<string, unknown> | null) {
     ? Math.max(0, trend === 'BULLISH' ? ((triggerPrice - close) / close) * 100 : ((close - triggerPrice) / close) * 100)
     : null
   const channelPosition = validInputs ? clamp(((close - channelLow) / (channelHigh - channelLow)) * 100) : null
-  const entryReady = target != null && current != null && target !== current && target !== 0
+  const entryReady = validInputs && target != null && current != null && target !== current && target !== 0
   const positionManaged = target != null && current != null && target === current && current !== 0
   const exitTriggerPrice = current === 1 ? exitChannelLow : current === -1 ? exitChannelHigh : null
   const distanceToExit = close != null && close > 0 && exitTriggerPrice != null
@@ -795,7 +795,7 @@ async function v5Overview(env: Env): Promise<Response> {
   const reconciliation = modern ? latestRuntime?.reconciliation as Record<string, unknown> : {status:'UNVERIFIED',issues:['Historial anterior sin conciliación por cuenta']}
   const reconciled = reconciliation?.status === 'RECONCILED' 
   const cutoff24h = nowMs - 24 * 60 * 60 * 1000
-  const recentSignals = signalRows.filter((row) => rowTime(row) >= cutoff24h && (!modern || analysisIssue(parseRawPayload(row.raw_payload)) === null))
+  const recentSignals = signalRows.filter((row) => rowTime(row) >= cutoff24h && rowTime(row) <= nowMs + 120000 && (!modern || analysisIssue(parseRawPayload(row.raw_payload)) === null))
   const uniqueSignalMap = new Map<string, Record<string, unknown>>()
   for (const row of recentSignals) {
     const raw = parseRawPayload(row.raw_payload)
@@ -811,6 +811,17 @@ async function v5Overview(env: Env): Promise<Response> {
     evaluated_at: row.created_at ?? row.eval_time,
     ...decisionEvaluation(row),
   }))
+  const entrySignals24h = recentEvaluations.filter(row => row.entry_ready).length
+  const externalExperts = modern && Array.isArray(latestRuntime?.external_experts)
+    ? (latestRuntime.external_experts as unknown[])
+      .filter((row): row is Record<string, unknown> => row !== null && typeof row === 'object' && !Array.isArray(row))
+      .map(row => {
+        const observed = Date.parse(String(row.observed_at ?? ''))
+        if (row.status === 'OBSERVING' && (!Number.isFinite(observed) || nowMs - observed > 120000 || observed > nowMs + 120000)) {
+          return { ...row, status: 'STALE', reported_status: 'OBSERVING' }
+        }
+        return row
+      }) : []
   const rejectedOrders = uniqueRecentSignals.filter((row) => {
     const raw = parseRawPayload(row.raw_payload)
     return String(raw?.order_status ?? '').includes('FAIL')
@@ -897,7 +908,11 @@ async function v5Overview(env: Env): Promise<Response> {
       broker_connected: latestContactMs > 0 ? brokerConnected : null,
       open_positions: openPositions.length,
       rejected_orders_24h: rejectedOrders.length,
-      signals_24h: uniqueRecentSignals.length,
+      evaluations_24h: recentEvaluations.length,
+      entry_signals_24h: entrySignals24h,
+      // Compatibility alias now means entry setups, never neutral evaluations.
+      signals_24h: entrySignals24h,
+      activity_window: { hours: 24, time_basis: 'UTC_OBSERVATION_TIME', scope: 'AVAILABLE_DEDUPLICATED_EVALUATIONS', future_clock_tolerance_seconds: 120 },
     },
     account: {
       login: finiteNumber(latestLifecycle?.account_login ?? latestRuntime?.account_login),
@@ -909,10 +924,10 @@ async function v5Overview(env: Env): Promise<Response> {
       leverage: finiteNumber(latestRuntime?.leverage),
     },
     performance: { ...metrics, max_drawdown: metrics.closed_trades ? metrics.max_drawdown : null },
-    dashboard_version: 'refresh-analysis-20261026',
+    dashboard_version: 'data-integrity-20261027',
     visibility: modern ? latestRuntime?.visibility ?? null : null,
     account_risk: modern ? { ...(latestRuntime?.account_risk ?? {exposures:[],complete:false}), portfolio: buildPortfolioRisk(latestRuntime?.account_risk ?? null, latestRuntime ?? null, nowMs, riskHistory) } : null,
-    external_experts: modern && Array.isArray(latestRuntime?.external_experts) ? latestRuntime.external_experts : [],
+    external_experts: externalExperts,
     attribution: modern ? latestRuntime?.attribution ?? null : null,
     periods: modern ? latestRuntime?.periods ?? null : null,
     validation: {
@@ -943,10 +958,12 @@ async function v5Overview(env: Env): Promise<Response> {
       time_basis: modern ? 'Broker para operaciones; UTC para observación' : 'Horas históricas sin validar',
       history_archive: latestRuntime?.history_archive ?? null,
       archive_delivery: latestRuntime?.archive_delivery ?? null,
+      archive_delivery_scope: modern ? 'SNAPSHOT_BEFORE_CURRENT_DELIVERY_ACK' : 'LEGACY_UNVERIFIED',
       trade_count_total: latestRuntime?.trade_count_total ?? tradeRows.length,
       equity_samples: modern ? latestRuntime?.equity_samples ?? [] : [],
-      refresh_seconds: 300,
-      write_interval_seconds: 900,
+      refresh_seconds: 30,
+      write_interval_seconds: null,
+      write_interval_note: 'Cadencia de la fuente no inferida del refresco de esta vista.',
       statistical_validation: '60 cierres es un hito de revisión; no certifica ventaja estadística',
     },
     symbols: bySymbol,
@@ -996,9 +1013,9 @@ async function cachedV5Overview(request: Request, env: Env): Promise<Response> {
   if (request.method !== 'GET') return json({ ok: false, error: 'Method not allowed' }, 405)
   const keyUrl = new URL(request.url)
   keyUrl.search = ''
-  keyUrl.pathname = '/api/v5-overview/cache-refresh-analysis-20261026/' + new URL(env.SUPABASE_URL).hostname
+  keyUrl.pathname = '/api/v5-overview/cache-data-integrity-20261027/' + new URL(env.SUPABASE_URL).hostname
   const cacheKey = new Request(keyUrl, { method: 'GET' })
-  const edgeCache = typeof caches !== 'undefined' ? await caches.open('dashboard-refresh-analysis-20261026') : null
+  const edgeCache = typeof caches !== 'undefined' ? await caches.open('dashboard-data-integrity-20261027') : null
   const hit = edgeCache ? await edgeCache.match(cacheKey) : undefined
   if (hit) {
     const headers = new Headers(hit.headers)
@@ -1030,7 +1047,7 @@ export default {
       return json({
         ok: true,
         service: 'algo-trading-dashboard',
-        build: '2026-10-26-refresh-analysis',
+        build: '2026-10-27-data-integrity',
         mode: 'read-only',
         ts: new Date().toISOString(),
       })

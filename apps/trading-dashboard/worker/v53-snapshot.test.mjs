@@ -64,3 +64,16 @@ test('future observation time and missing analysis do not invent liveness or a f
  assert.ok(d.symbols.every(row=>row.signal==='UNKNOWN'&&row.position==='UNKNOWN'));
  assert.deepEqual(d.asset_research,[]);
 });
+
+test('external observation freshness is evaluated now without modifying its recorded evidence',async()=>{
+ const s=state();s.external_experts=[{id:'hobbiecode_goldrush',status:'OBSERVING',observed_at:new Date(Date.now()-600000).toISOString(),open_positions:0},{id:'btc_momentum_confluence',status:'OBSERVING',observed_at:new Date().toISOString(),open_positions:0,attribution_basis:'CONFIGURED_MAGIC',expert_running_verified:false}];
+ const d=await get(s);
+ assert.equal(d.external_experts[0].status,'STALE');
+ assert.equal(d.external_experts[0].reported_status,'OBSERVING');
+ assert.equal(d.external_experts[1].status,'OBSERVING');
+ assert.equal(d.external_experts[1].expert_running_verified,false);
+ assert.equal(s.external_experts[0].status,'OBSERVING');
+ assert.equal(d.evidence.archive_delivery_scope,'SNAPSHOT_BEFORE_CURRENT_DELIVERY_ACK');
+ assert.equal(d.evidence.refresh_seconds,30);
+ assert.equal(d.evidence.write_interval_seconds,null);
+});
