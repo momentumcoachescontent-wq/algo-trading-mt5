@@ -1,0 +1,59 @@
+name: Deploy trading dashboard production
+on:
+  push:
+    branches: [codex/dashboard-production-20261025]
+    paths: ['apps/trading-dashboard/**', '.github/workflows/deploy-dashboard.yml']
+permissions:
+  contents: read
+concurrency:
+  group: trading-dashboard-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/trading-dashboard
+    steps:
+      - name: Verify deployment credentials are configured
+        working-directory: .
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CF_TOKEN" ] || [ -z "$CF_ACCOUNT" ]; then
+            echo '::error::Cloudflare repository deployment credentials are missing.'
+            exit 1
+          fi
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        with:
+          version: 11.25.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: apps/trading-dashboard/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Worker tests
+        run: node --experimental-strip-types --test worker/*.test.mjs
+      - run: pnpm run lint
+      - run: pnpm run build
+      - name: Record previous deployment for rollback
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: pnpm dlx wrangler@4.118.0 deployments list --config wrangler.jsonc --json > deployment-before.json
+      - name: Deploy only dashboard; preserve existing variables and secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: pnpm dlx wrangler@4.118.0 deploy --config wrangler.jsonc --keep-vars
+      - name: Preserve build and rollback metadata
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dashboard-production-build
+          path: |
+            apps/trading-dashboard/dist
+            apps/trading-dashboard/deployment-before.json
