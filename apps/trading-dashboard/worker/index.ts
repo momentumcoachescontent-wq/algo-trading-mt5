@@ -1,6 +1,7 @@
 import { buildPortfolioRisk } from './portfolio-risk.ts'
 import { analysisIssue, preferEvidence } from './evidence.ts'
 import { publicResearchEvidence } from './research-evidence.ts'
+import { publicExecutionAudit } from './execution-audit.ts'
 type Env = {
   ASSETS: {
     fetch(request: Request): Promise<Response>
@@ -925,8 +926,9 @@ async function v5Overview(env: Env): Promise<Response> {
       leverage: finiteNumber(latestRuntime?.leverage),
     },
     performance: { ...metrics, max_drawdown: metrics.closed_trades ? metrics.max_drawdown : null },
-    dashboard_version: 'research-evidence-20261027',
+    dashboard_version: 'demo-automation-20261031',
     research_evidence: modern ? publicResearchEvidence(latestRuntime?.research_evidence, nowMs) : null,
+    execution_audit: modern ? publicExecutionAudit(latestRuntime?.execution_audit) : null,
     visibility: modern ? latestRuntime?.visibility ?? null : null,
     account_risk: modern ? { ...(latestRuntime?.account_risk ?? {exposures:[],complete:false}), portfolio: buildPortfolioRisk(latestRuntime?.account_risk ?? null, latestRuntime ?? null, nowMs, riskHistory) } : null,
     external_experts: externalExperts,
@@ -1015,7 +1017,7 @@ async function cachedV5Overview(request: Request, env: Env): Promise<Response> {
   if (request.method !== 'GET') return json({ ok: false, error: 'Method not allowed' }, 405)
   const keyUrl = new URL(request.url)
   keyUrl.search = ''
-  keyUrl.pathname = '/api/v5-overview/cache-research-evidence-20261027/' + new URL(env.SUPABASE_URL).hostname
+  keyUrl.pathname = '/api/v5-overview/cache-demo-automation-20261031/' + new URL(env.SUPABASE_URL).hostname
   const cacheKey = new Request(keyUrl, { method: 'GET' })
   const edgeCache = typeof caches !== 'undefined' ? await caches.open('dashboard-research-evidence-20261027') : null
   const hit = edgeCache ? await edgeCache.match(cacheKey) : undefined
@@ -1049,7 +1051,7 @@ export default {
       return json({
         ok: true,
         service: 'algo-trading-dashboard',
-        build: '2026-10-27-research-evidence',
+        build: '2026-10-31-demo-automation',
         mode: 'read-only',
         ts: new Date().toISOString(),
       })

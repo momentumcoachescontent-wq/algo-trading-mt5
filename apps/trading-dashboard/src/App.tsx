@@ -33,6 +33,7 @@ type Snapshot = {
   external_experts?: External[]; symbols?: Sleeve[]; positions?: Position[]
   asset_research?: Research[]
   research_evidence?: ResearchEvidence | null
+  execution_audit?: { requests_24h?: N; confirmed_deals_24h?: N; rejected_24h?: N; observed_at?: string | null; rows?: ExecutionRow[] } | null
   performance?: { closed_trades?: N; realized_pnl?: N }
   account_risk?: { status?: string; complete?: boolean } | null
   evidence?: {
@@ -41,6 +42,7 @@ type Snapshot = {
     observation_max_age_seconds?: N
   }
 }
+type ExecutionRow = { request_id?: string; observed_at?: string | null; symbol?: string; timeframe?: string; action?: string; status?: string; requested_lots?: N; requested_sl?: N; requested_tp?: N; broker_retcode?: N; broker_order_ticket?: string | null; broker_deal_ticket?: string | null; fill_price?: N; fill_confirmed?: boolean }
 type ResearchEvidence = {
   status?: string; freshness?: string; as_of_utc?: string | null; generated_at_utc?: string | null
   decision_count?: N; entry_candidate_count?: N; linked_closed_trades?: N; unlinked_execution_events?: N
@@ -70,6 +72,8 @@ const labels: Record<string, string> = {
   WAIT_SESSION: 'Esperando sesión o cotización', ALREADY_EVALUATED: 'Vela ya evaluada',
   NOT_SENT: 'Sin solicitud enviada', NO_ACTION: 'Sin acción', OPEN_OK: 'Apertura aceptada',
   OPEN_FAIL: 'Apertura no confirmada', CLOSE_OK: 'Cierre aceptado', CLOSE_FAIL: 'Cierre no confirmado',
+  REQUEST_RECORDED: 'Solicitud registrada', BROKER_DEAL_CONFIRMED: 'Ejecución confirmada por deal',
+  RESULT_RECORDED_NO_FILL_PROOF: 'Respuesta recibida · ejecución sin confirmar', BROKER_REJECTED: 'Rechazo del broker', CONFLICT_REQUIRES_REVIEW: 'Identificadores en conflicto',
   UNKNOWN: 'Sin evaluación confirmada', DESCRIPTIVE_ONLY: 'Análisis descriptivo',
   SYMBOL_UNAVAILABLE: 'Símbolo no disponible', INSUFFICIENT_HISTORY: 'Histórico insuficiente', INVALID_HISTORY: 'Histórico por revisar',
 }
@@ -264,6 +268,9 @@ function App() {
       <div className={`execution-callout ${visibility?.execution_input_enabled === false ? 'execution-off' : ''}`}><span aria-hidden="true">◉</span><div><strong>{execution}</strong><p>{visibility?.execution_input_enabled === false || visibility?.observation_mode === true ? 'La telemetría puede estar conectada mientras este Expert no envía órdenes.' : 'Los permisos del terminal, los controles y una señal válida también deben cumplirse.'}</p></div></div>
       <div className="portfolio-stats"><Metric title="Posiciones propias" value={data ? count(positions.length) : 'Sin dato'} /><Metric title="Cierres atribuidos" value={count(data?.performance?.closed_trades)} /><Metric title="P&L realizado propio" value={money(data?.performance?.realized_pnl, currency)} /></div>
       <p className="activity-summary">Últimas 24 h de observaciones disponibles: <strong>{count(data?.operational?.evaluations_24h)}</strong> evaluaciones registradas · <strong>{count(data?.operational?.entry_signals_24h)}</strong> señales de entrada. Una evaluación neutral no es una orden.</p>
+      <details><summary>Órdenes y protecciones registradas</summary><p className="section-copy">Últimas 24 h al corte de {date(data?.execution_audit?.observed_at)}: {count(data?.execution_audit?.requests_24h)} solicitudes · {count(data?.execution_audit?.confirmed_deals_24h)} ejecuciones vinculadas a deals · {count(data?.execution_audit?.rejected_24h)} rechazos. Una respuesta del broker sin deal vinculado conserva ejecución sin confirmar.</p>
+        {data?.execution_audit?.rows?.length ? <div className="position-list">{data.execution_audit.rows.map((row, index) => <div className="position" key={row.request_id ?? index}><div><strong>{row.symbol} {row.timeframe} · {row.action}</strong><span>{label(row.status)} · {date(row.observed_at)}</span><span>{count(row.requested_lots)} lotes · SL solicitado {decimal(row.requested_sl)} · TP solicitado {decimal(row.requested_tp)}</span></div><div><strong>{row.fill_confirmed ? `Precio ejecutado ${decimal(row.fill_price)}` : 'Sin fill confirmado'}</strong><span>Retcode {count(row.broker_retcode)} · orden {row.broker_order_ticket ?? 'sin confirmar'} · deal {row.broker_deal_ticket ?? 'sin confirmar'}</span></div></div>)}</div> : <p className="empty-state">Sin solicitudes registradas en la evidencia disponible.</p>}
+      </details>
       <PositionCards rows={positions} currency={currency} empty={data ? 'La captura de PortfolioTrend no contiene posiciones propias. Esto no descarta exposición de otros Experts.' : 'Esperando captura de posiciones.'} />
       <div className="panel-foot"><span>Broker: {data?.operational?.broker_connected === true ? 'conectado en la captura' : data?.operational?.broker_connected === false ? 'desconectado' : 'sin confirmar'}</span><span>HALT: {visibility?.halt_active === true ? 'activo' : visibility?.halt_active === false ? 'no observado' : 'sin dato'}</span></div>
     </section><aside className="panel pipeline-panel"><p className="eyebrow">Integridad del flujo</p><h2>Datos con contexto</h2><div className="pipeline-item"><span>01</span><div><strong>Captura MT5</strong><p>{date(data?.operational?.latest_contact)}</p></div><Badge tone={online ? 'good' : 'warn'}>{online ? 'Vigente' : 'Sin confirmar'}</Badge></div><div className="pipeline-item"><span>02</span><div><strong>Conciliación</strong><p>{label(data?.evidence?.reconciliation?.status)}</p></div></div><div className="pipeline-item"><span>03</span><div><strong>Archivo privado</strong><p>{label(archive?.state)} · pendientes en esa captura: {count(archive?.pending)}</p><p>Estado al formar la captura, antes del acuse de su propia entrega; no confirma un atasco actual.</p></div></div><div className="pipeline-item"><span>04</span><div><strong>Observación de riesgo</strong><p>{label(risk?.status)}{risk?.complete === false ? ' · cobertura incompleta' : ''}</p></div></div><p className="pipeline-note">Si falta el observador o la sonda, la exposición externa y el riesgo de cuenta siguen sin confirmar.</p></aside></div>
