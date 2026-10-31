@@ -4,7 +4,7 @@ import { installWakeRefresh } from './wake-refresh.ts'
 import './App.css'
 
 type N = number | null
-type Position = { symbol?: string; direction?: string; type?: number; lots?: N; volume?: N; price?: N; sl?: N; tp?: N; pnl?: N }
+type Position = { symbol?: string; direction?: string; type?: number; lots?: N; volume?: N; price?: N; sl?: N; tp?: N; pnl?: N; initial_risk_estimate?: N; entry_initial_risk_estimate?: N; remaining_risk_estimate?: N }
 type External = {
   id?: string; name?: string; symbol?: string; timeframe?: string; status?: string; observed_at?: string | null; open_positions?: N
   pending_orders?: Position[] | null; positions?: Position[]; floating_pnl?: N
@@ -34,6 +34,7 @@ type Snapshot = {
   asset_research?: Research[]
   research_evidence?: ResearchEvidence | null
   execution_audit?: { requests_24h?: N; confirmed_deals_24h?: N; rejected_24h?: N; observed_at?: string | null; rows?: ExecutionRow[] } | null
+  execution_policy?: { sizing_mode?: string; mode?: string; fixed_lots?: N; fixed_amd_lots?: N; per_trade_pct?: N; take_profit_r?: N; portfolio_pct?: N; gold_pct?: N } | null
   performance?: { closed_trades?: N; realized_pnl?: N }
   account_risk?: { status?: string; complete?: boolean } | null
   evidence?: {
@@ -132,7 +133,7 @@ function PositionCards({ rows, empty, currency, pending = false }: { rows: Posit
     const side = pending && p.type != null ? types[p.type] ?? `Tipo ${p.type}` : direction === 'buy' ? 'Compra' : direction === 'sell' ? 'Venta' : p.direction ?? 'Dirección sin dato'
     return <div className="position" key={`${p.symbol}-${i}`}>
       <div><strong>{p.symbol ?? 'Símbolo sin dato'}</strong><span>{side} · {count(p.lots ?? p.volume)} lotes</span></div>
-      <div><strong>{pending ? `Activación: ${finite(p.price) == null ? 'sin dato' : new Intl.NumberFormat('es-MX', { maximumFractionDigits: 5 }).format(p.price!)}` : money(p.pnl, currency)}</strong><span>SL {finite(p.sl) == null ? 'sin dato' : p.sl === 0 ? 'no establecido' : p.sl} · TP {finite(p.tp) == null ? 'sin dato' : p.tp === 0 ? 'sin objetivo fijo' : p.tp}</span></div>
+      <div><strong>{pending ? `Activación: ${finite(p.price) == null ? 'sin dato' : new Intl.NumberFormat('es-MX', { maximumFractionDigits: 5 }).format(p.price!)}` : money(p.pnl, currency)}</strong><span>SL {finite(p.sl) == null ? 'sin dato' : p.sl === 0 ? 'no establecido' : p.sl} · TP {finite(p.tp) == null ? 'sin dato' : p.tp === 0 ? 'sin objetivo fijo' : p.tp}</span>{!pending && (finite(p.initial_risk_estimate) != null || finite(p.entry_initial_risk_estimate) != null || finite(p.remaining_risk_estimate) != null) && <span>Riesgo inicial estimado {money(p.entry_initial_risk_estimate ?? p.initial_risk_estimate, currency)} · riesgo restante a SL {money(p.remaining_risk_estimate, currency)}</span>}</div>
     </div>
   })}</div> : <p className="empty-state">{empty}</p>
 }
@@ -268,6 +269,7 @@ function App() {
       <div className={`execution-callout ${visibility?.execution_input_enabled === false ? 'execution-off' : ''}`}><span aria-hidden="true">◉</span><div><strong>{execution}</strong><p>{visibility?.execution_input_enabled === false || visibility?.observation_mode === true ? 'La telemetría puede estar conectada mientras este Expert no envía órdenes.' : 'Los permisos del terminal, los controles y una señal válida también deben cumplirse.'}</p></div></div>
       <div className="portfolio-stats"><Metric title="Posiciones propias" value={data ? count(positions.length) : 'Sin dato'} /><Metric title="Cierres atribuidos" value={count(data?.performance?.closed_trades)} /><Metric title="P&L realizado propio" value={money(data?.performance?.realized_pnl, currency)} /></div>
       <p className="activity-summary">Últimas 24 h de observaciones disponibles: <strong>{count(data?.operational?.evaluations_24h)}</strong> evaluaciones registradas · <strong>{count(data?.operational?.entry_signals_24h)}</strong> señales de entrada. Una evaluación neutral no es una orden.</p>
+      {data?.execution_policy && <p className="activity-summary">{data.execution_policy.sizing_mode === 'FIXED_VOLUME_DEMO' ? `Lote fijo demo: ${decimal(data.execution_policy.fixed_lots, 2)} · AMD ${decimal(data.execution_policy.fixed_amd_lots, 2)}. El riesgo monetario se calcula para cada posición y su SL.` : data.execution_policy.sizing_mode === 'RISK_PERCENT' ? `Tamaño por riesgo: ${percent(data.execution_policy.per_trade_pct)} por entrada.` : 'Modo de cálculo de tamaño sin confirmar.'} TP configurado: {decimal(data.execution_policy.take_profit_r, 2)} R de la distancia inicial al SL.</p>}
       <details><summary>Órdenes y protecciones registradas</summary><p className="section-copy">Últimas 24 h al corte de {date(data?.execution_audit?.observed_at)}: {count(data?.execution_audit?.requests_24h)} solicitudes · {count(data?.execution_audit?.confirmed_deals_24h)} ejecuciones vinculadas a deals · {count(data?.execution_audit?.rejected_24h)} rechazos. Una respuesta del broker sin deal vinculado conserva ejecución sin confirmar.</p>
         {data?.execution_audit?.rows?.length ? <div className="position-list">{data.execution_audit.rows.map((row, index) => <div className="position" key={row.request_id ?? index}><div><strong>{row.symbol} {row.timeframe} · {row.action}</strong><span>{label(row.status)} · {date(row.observed_at)}</span><span>{count(row.requested_lots)} lotes · SL solicitado {decimal(row.requested_sl)} · TP solicitado {decimal(row.requested_tp)}</span></div><div><strong>{row.fill_confirmed ? `Precio ejecutado ${decimal(row.fill_price)}` : 'Sin fill confirmado'}</strong><span>Retcode {count(row.broker_retcode)} · orden {row.broker_order_ticket ?? 'sin confirmar'} · deal {row.broker_deal_ticket ?? 'sin confirmar'}</span></div></div>)}</div> : <p className="empty-state">Sin solicitudes registradas en la evidencia disponible.</p>}
       </details>
