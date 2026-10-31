@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { installWakeRefresh } from './wake-refresh.ts'
+import TrendChart from './TrendChart.tsx'
+import type { TrendData } from './TrendChart.tsx'
 import './App.css'
 
 type N = number | null
-type Position = { symbol?: string; direction?: string; type?: number; lots?: N; volume?: N; price?: N; sl?: N; tp?: N; pnl?: N; initial_risk_estimate?: N; entry_initial_risk_estimate?: N; remaining_risk_estimate?: N }
+type Position = { symbol?: string; timeframe?: string; direction?: string; type?: number; lots?: N; volume?: N; price?: N; sl?: N; tp?: N; pnl?: N; initial_risk_estimate?: N; entry_initial_risk_estimate?: N; remaining_risk_estimate?: N }
 type External = {
   id?: string; name?: string; symbol?: string; timeframe?: string; status?: string; observed_at?: string | null; open_positions?: N
   pending_orders?: Position[] | null; positions?: Position[]; floating_pnl?: N
@@ -32,6 +34,7 @@ type Snapshot = {
   visibility?: { execution_input_enabled?: boolean; observation_mode?: boolean; halt_active?: boolean } | null
   external_experts?: External[]; symbols?: Sleeve[]; positions?: Position[]
   asset_research?: Research[]
+  trend_charts?: TrendData | null
   research_evidence?: ResearchEvidence | null
   execution_audit?: { requests_24h?: N; confirmed_deals_24h?: N; rejected_24h?: N; observed_at?: string | null; rows?: ExecutionRow[] } | null
   execution_policy?: { sizing_mode?: string; mode?: string; fixed_lots?: N; fixed_amd_lots?: N; per_trade_pct?: N; take_profit_r?: N; portfolio_pct?: N; gold_pct?: N } | null
@@ -263,7 +266,7 @@ function App() {
     {error && <div className="error-banner" role="alert"><strong>No se pudo actualizar el dashboard.</strong><span>{error} {data ? `Se conserva la lectura anterior de ${date(lastRead)}; no se confirma el estado actual.` : 'No hay cifras actuales confirmadas.'}</span></div>}
     {!error && transport === 'STALE' && <div className="notice source-stale" role="status"><strong>La página responde, pero MT5 no entrega una captura reciente.</strong><span>Última captura: {date(data?.operational?.latest_contact)}. Consultar de nuevo no convierte estos datos en actuales; se espera una nueva observación del terminal y del relay.</span></div>}
     {!data && !error && <div className="loading-message" role="status">Consultando la última captura disponible…</div>}
-    <nav className="section-nav" aria-label="Secciones del dashboard"><a href="#account-summary">Cuenta</a><a href="#portfolio-title">PortfolioTrend</a><a href="#external-experts-title">Experts externos{externalExperts.length ? ` (${externalExperts.length})` : ''}</a><a href="#sleeves-title">Cinco mangas</a><a href="#research-title">Otros activos{research.length ? ` (${research.length})` : ''}</a></nav>
+    <nav className="section-nav" aria-label="Secciones del dashboard"><a href="#account-summary">Cuenta</a><a href="#portfolio-title">PortfolioTrend</a><a href="#trend-analysis">Análisis gráfico</a><a href="#external-experts-title">Experts externos{externalExperts.length ? ` (${externalExperts.length})` : ''}</a><a href="#sleeves-title">Cinco mangas</a><a href="#research-title">Otros activos{research.length ? ` (${research.length})` : ''}</a></nav>
     <section className="account-grid" id="account-summary" aria-label="Métricas de toda la cuenta"><Metric title="Equity de la cuenta" value={money(data?.account?.equity, currency)} note="Incluye todas las estrategias" accent /><Metric title="Balance" value={money(data?.account?.balance, currency)} note="Saldo registrado en el broker" /><Metric title="P&L flotante de cuenta" value={money(data?.account?.floating_pnl, currency)} note="No es sólo PortfolioTrend" /><Metric title="Margen libre" value={money(data?.account?.free_margin, currency)} note={`Divisa de cuenta: ${currency}`} /></section>
     <div className="operating-grid"><section className="panel portfolio-panel" aria-labelledby="portfolio-title"><div className="section-top"><div><p className="eyebrow">Motor multi-activo</p><h2 id="portfolio-title">PortfolioTrend</h2><span className="release">{data?.expert?.version ?? 'Versión aún sin confirmar'}</span></div><Badge tone={visibility?.execution_input_enabled === true && visibility?.observation_mode === false && !visibility?.halt_active ? 'good' : 'warn'}>{visibility?.observation_mode === true ? 'Modo observación' : 'Estado de ejecución'}</Badge></div>
       <div className={`execution-callout ${visibility?.execution_input_enabled === false ? 'execution-off' : ''}`}><span aria-hidden="true">◉</span><div><strong>{execution}</strong><p>{visibility?.execution_input_enabled === false || visibility?.observation_mode === true ? 'La telemetría puede estar conectada mientras este Expert no envía órdenes.' : 'Los permisos del terminal, los controles y una señal válida también deben cumplirse.'}</p></div></div>
@@ -278,6 +281,7 @@ function App() {
     </section><aside className="panel pipeline-panel"><p className="eyebrow">Integridad del flujo</p><h2>Datos con contexto</h2><div className="pipeline-item"><span>01</span><div><strong>Captura MT5</strong><p>{date(data?.operational?.latest_contact)}</p></div><Badge tone={online ? 'good' : 'warn'}>{online ? 'Vigente' : 'Sin confirmar'}</Badge></div><div className="pipeline-item"><span>02</span><div><strong>Conciliación</strong><p>{label(data?.evidence?.reconciliation?.status)}</p></div></div><div className="pipeline-item"><span>03</span><div><strong>Archivo privado</strong><p>{label(archive?.state)} · pendientes en esa captura: {count(archive?.pending)}</p><p>Estado al formar la captura, antes del acuse de su propia entrega; no confirma un atasco actual.</p></div></div><div className="pipeline-item"><span>04</span><div><strong>Observación de riesgo</strong><p>{label(risk?.status)}{risk?.complete === false ? ' · cobertura incompleta' : ''}</p></div></div><p className="pipeline-note">Si falta el observador o la sonda, la exposición externa y el riesgo de cuenta siguen sin confirmar.</p></aside></div>
     <section aria-labelledby="external-experts-title"><div className="section-top"><div><p className="eyebrow">Fuentes externas recibidas</p><h2 id="external-experts-title">Experts externos</h2></div><span className="quiet">Observar una cuenta no acredita ejecución del EA.</span></div>{externalExperts.length ? externalExperts.map((expert, index) => <ExternalPanel key={expert.id ?? index} expert={expert} currency={currency} now={now} />) : <ExternalPanel currency={currency} now={now} />}</section>
     <section className="panel sleeves-section" aria-labelledby="sleeves-title"><div className="section-top"><div><p className="eyebrow">Asignación de PortfolioTrend</p><h2 id="sleeves-title">Cinco mangas, una instancia</h2></div><span className="quiet">D1: 20/10 · SMA200 &nbsp; H4: 60/30 · SMA600</span></div><div className="sleeves-grid">{sleeves.map(s => <SleeveCard key={`${s.symbol}-${s.timeframe}`} sleeve={s} current={online} />)}</div></section>
+    <TrendChart data={data?.trend_charts} positions={positions} />
     <ResearchEvidencePanel row={data?.research_evidence} />
     <ResearchPanel rows={research} current={online} />
     <footer><span>Lectura automática cada 30 s · Horarios en Ciudad de México</span><span>La apertura de una posición se confirma con evidencia del broker.</span><span>Última consulta correcta: {date(lastRead)}</span></footer>
