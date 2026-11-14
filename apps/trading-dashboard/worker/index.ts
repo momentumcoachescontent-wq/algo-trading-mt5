@@ -63,6 +63,33 @@ async function portfolioRiskHistory(env:Env, runtime:Record<string, unknown>):Pr
   } catch {return null}
 }
 
+async function weeklyPreflight(env: Env, runtime: Record<string, unknown>) {
+  const week = parseRawPayload(runtime.weekly)
+  if (!env.SUPABASE_SERVICE_ROLE_KEY || !runtime.account_login || !runtime.account_server ||
+      typeof week?.period_start !== 'string' || typeof week.observed_through !== 'string') return null
+  try {
+    const response = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/portfolio_preflight_history`, {
+      method: 'POST',
+      headers: { ...supabaseHeaders(env.SUPABASE_SERVICE_ROLE_KEY), 'content-type': 'application/json' },
+      body: JSON.stringify({ p_account: String(runtime.account_login), p_server: runtime.account_server,
+        p_start: week.period_start, p_end: week.observed_through }),
+      signal: AbortSignal.timeout(4000),
+    })
+    if (!response.ok) return null
+    const rows: unknown = await response.json()
+    if (!Array.isArray(rows)) return null
+    return rows.flatMap((row) => {
+      if (!row || typeof row !== 'object' || typeof row.symbol !== 'string' ||
+          typeof row.timeframe !== 'string' || typeof row.bar_time !== 'string' ||
+          typeof row.reason !== 'string' || typeof row.resolution !== 'string') return []
+      return [{ symbol: row.symbol, timeframe: row.timeframe, bar_time: row.bar_time,
+        reason: row.reason, resolution: row.resolution, preflight_checks: finiteNumber(row.preflight_checks),
+        pending_symbol: typeof row.pending_symbol === 'string' ? row.pending_symbol : null,
+        quote_age_seconds: finiteNumber(row.quote_age_seconds) }]
+    })
+  } catch { return null }
+}
+
 async function supabaseGet(env: Env, path: string): Promise<Response> {
   const key = getSupabaseKey(env)
 
@@ -664,11 +691,13 @@ function decisionEvaluation(row: Record<string, unknown> | null) {
     selectionStatus = 'EXECUTION_BLOCKED'
     reasonCode = 'WAIT_SESSION'
     reason = 'Espera apertura de sesión y cotización reciente; revalidará la decisión'
-  } else if (orderStatus.startsWith('RISK_')) {
+  } else if (orderStatus.startsWith('RISK_') || orderStatus === 'PREFLIGHT_RETRY' || orderStatus === 'PREFLIGHT_EXPIRED') {
     selectionStatus = 'EXECUTION_BLOCKED'
-    reasonCode = orderStatus
+    reasonCode = orderMessage || orderStatus
     const riskReasons: Record<string, string> = {
       UNPROTECTED_ACCOUNT_POSITION: 'hay posiciones sin SL confirmado',
+      PENDING_QUOTE_UNAVAILABLE: 'falta una cotización reciente para valorar una orden pendiente',
+      PREFLIGHT_RETRY_WINDOW_EXPIRED: 'venció la ventana de reintento',
       QUOTE_UNAVAILABLE: 'la cotización no es reciente o no es válida',
       ATR_UNAVAILABLE: 'faltan datos para calcular el ATR',
       MINIMUM_VOLUME_EXCEEDS_BUDGET: 'el volumen mínimo supera el presupuesto',
@@ -678,7 +707,7 @@ function decisionEvaluation(row: Record<string, unknown> | null) {
       STOP_PENDING_EXECUTION: 'hay un SL pendiente de ejecución',
     }
     reason = orderStatus === 'RISK_OBSERVE' ? 'Política en observación; no abre nuevas posiciones'
-      : `Entrada bloqueada por riesgo: ${riskReasons[orderMessage] ?? (orderMessage || 'verificar presupuesto y protección')}`
+      : `${orderStatus === 'PREFLIGHT_RETRY' ? 'Reintento previo al envío programado' : 'Entrada bloqueada por riesgo'}: ${riskReasons[orderMessage] ?? (orderMessage || 'verificar presupuesto y protección')}`
   } else if (executed) {
     selectionStatus = 'EXECUTED'
     reasonCode = 'EXECUTED'
@@ -890,7 +919,9 @@ async function v5Overview(env: Env): Promise<Response> {
       ? 'READY_FOR_RISK_DESIGN'
       : 'REVIEW_STRATEGY'
 
-  const riskHistory = modern ? await portfolioRiskHistory(env, latestRuntime ?? {}) : null
+  const [riskHistory, preflightHistory] = modern && latestRuntime
+    ? await Promise.all([portfolioRiskHistory(env, latestRuntime), weeklyPreflight(env, latestRuntime)])
+    : [null, null]
   return json({
     ok: true,
     generated_at: new Date(nowMs).toISOString(),
@@ -956,6 +987,7 @@ async function v5Overview(env: Env): Promise<Response> {
     demo_analysis: modern ? latestRuntime?.demo_analysis ?? null : null,
     shadow_review: modern ? latestRuntime?.shadow_review ?? null : null,
     weekly: modern ? latestRuntime?.weekly ?? null : null,
+    weekly_preflight: preflightHistory,
     protection: modern ? latestRuntime?.protection ?? { total: openPositions.length, sl_present: openPositions.filter(p => Number(p.sl) > 0).length, unprotected: openPositions.filter(p => !(Number(p.sl) > 0)).length, tp_policy: 'DONCHIAN_NO_FIXED_TP', observed_at: latestRuntime?.observed_at } : null,
     evidence: {
       feed_quality: modern ? latestRuntime?.feed_quality ?? [] : [],
@@ -1029,7 +1061,7 @@ async function cachedV5Overview(request: Request, env: Env): Promise<Response> {
   if (request.method !== 'GET') return json({ ok: false, error: 'Method not allowed' }, 405)
   const keyUrl = new URL(request.url)
   keyUrl.search = ''
-  keyUrl.pathname = '/api/v5-overview/cache-trend-charts-20261031/' + new URL(env.SUPABASE_URL).hostname
+  keyUrl.pathname = '/api/v5-overview/cache-preflight-20261114/' + new URL(env.SUPABASE_URL).hostname
   const cacheKey = new Request(keyUrl, { method: 'GET' })
   const edgeCache = typeof caches !== 'undefined' ? await caches.open('dashboard-research-evidence-20261027') : null
   const hit = edgeCache ? await edgeCache.match(cacheKey) : undefined

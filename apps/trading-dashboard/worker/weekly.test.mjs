@@ -29,3 +29,29 @@ test('24h entry setups are not neutral evaluations and exclude old or future obs
  const n=await get(flat);assert.equal(n.operational.evaluations_24h,1);assert.equal(n.operational.signals_24h,0);
 });
 
+
+test('weekly preflight history uses the snapshot cut and preserves the block', async () => {
+ const s=state();
+ s.account_login=123;
+ s.account_server='Demo';
+ s.weekly={period_start:'2026-11-08T21:00:00Z',observed_through:'2026-11-13T23:15:12Z'};
+ s.analysis_events=[evalRow('ALREADY_EVALUATED'),evalRow('PREFLIGHT_RETRY',{order_message:'PENDING_QUOTE_UNAVAILABLE'})];
+ const previous=globalThis.fetch;
+ let query;
+ globalThis.fetch=async(url,options)=>{
+   if(String(url).endsWith('/portfolio_preflight_history')){
+     query=JSON.parse(options.body);
+     return Response.json([{symbol:'AMD',timeframe:'H4',bar_time:'2026-09-17T16:00:00',reason:'PENDING_QUOTE_UNAVAILABLE',resolution:'RETRY_RECORDED',preflight_checks:2,pending_symbol:'XAUUSD',quote_age_seconds:6,pending_ticket:'private'}]);
+   }
+   if(String(url).endsWith('/portfolio_risk_history')) return Response.json([]);
+   return Response.json([{lifecycle:[{event:'ea_init',raw_payload:s}],signals:[],trades:[]}]);
+ };
+ try{
+   const d=await (await worker.fetch(new Request('https://test/api/v5-overview'),env)).json();
+   assert.deepEqual(query,{p_account:'123',p_server:'Demo',p_start:s.weekly.period_start,p_end:s.weekly.observed_through});
+   assert.equal(d.weekly_preflight[0].preflight_checks,2);
+   assert.equal(d.weekly_preflight[0].pending_ticket,undefined);
+   assert.equal(d.decision_flow.stages.orders_attempted,0);
+   assert.equal(d.decision_flow.reasons[0].code,'PENDING_QUOTE_UNAVAILABLE');
+ }finally{globalThis.fetch=previous}
+});

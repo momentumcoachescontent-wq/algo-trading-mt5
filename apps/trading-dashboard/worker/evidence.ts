@@ -13,7 +13,7 @@ export function analysisIssue(raw: Row | null): string | null {
 export function preferEvidence(a: Row, b: Row): Row {
   const rank = (e: Row) => {
     const s = String(e.order_status ?? '')
-    return s.endsWith('_OK') ? 4 : /^(RISK_|OPEN_|CLOSE_)/.test(s) ? 3 : s === 'ALREADY_EVALUATED' ? 0 : 1
+    return s.endsWith('_OK') ? 4 : /^(PREFLIGHT_|RISK_|OPEN_|CLOSE_)/.test(s) ? 3 : s === 'ALREADY_EVALUATED' ? 0 : 1
   }
   return rank(b) > rank(a) ? b : a
 }
