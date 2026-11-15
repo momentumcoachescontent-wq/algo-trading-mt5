@@ -69,6 +69,35 @@ export function buildLifecycleExecutionScope(body: Payload): Payload | null {
   return Object.keys(scope).length > 0 ? scope : null;
 }
 
+// Store a bounded lifecycle summary instead of entire EA history/chart arrays.
+// The fields below are diagnostic metadata only; order and risk records use
+// separate event paths and are never trimmed by this function.
+const LIFECYCLE_SUMMARY_KEYS = [
+  "event", "symbol", "ea_version", "phase", "boot_id", "execution_mode",
+  "account_environment", "account_login", "balance", "equity",
+  "terminal_time", "guard_version", "reason", "reason_code",
+  "deinit_reason_code", "deinit_reason_text", "release_id",
+  "strategy_variant", "scope_mode", "execution_scope",
+] as const;
+
+export function summarizeLifecyclePayload(body: Payload): Payload {
+  const summary: Payload = {};
+  for (const key of LIFECYCLE_SUMMARY_KEYS) {
+    const value = body[key];
+    if (value === undefined || value === null) continue;
+    if (key === "execution_scope") {
+      // This scope is already normalized and bounded before persistence.
+      const scope = buildLifecycleExecutionScope(body);
+      if (scope) summary.execution_scope = scope;
+    } else if (typeof value === "string") {
+      summary[key] = value.slice(0, 512);
+    } else if (typeof value === "number" || typeof value === "boolean") {
+      summary[key] = value;
+    }
+  }
+  return summary;
+}
+
 export function buildLifecycleRow(
   body: Payload,
   event: LifecycleEvent,
@@ -110,7 +139,7 @@ export function buildLifecycleRow(
     execution_mode: executionMode,
     execution_scope: scope,
     raw_payload: {
-      ...body,
+      ...summarizeLifecyclePayload(body),
       normalized_event: event,
       worker_request_id: requestId,
       worker_received_at: receivedAt,
