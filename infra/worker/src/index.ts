@@ -506,6 +506,30 @@ async function handleCircuitBreak(
   }
 }
 
+// Durable deduplication across Cloudflare isolates. Only lifecycle init
+// events with a boot ID are eligible. Never suppress deinit/trade/risk events.
+async function lifecycleInitExists(
+  body: Payload,
+  supabaseUrl: string,
+  key: string,
+): Promise<boolean> {
+  if (!body.boot_id) return false;
+  const params = new URLSearchParams({
+    select: "id",
+    event: "eq.ea_init",
+    boot_id: `eq.${String(body.boot_id)}`,
+    symbol: `eq.${String(body.symbol)}`,
+    ea_version: `eq.${String(body.ea_version)}`,
+    limit: "1",
+  });
+  const res = await fetch(`${supabaseUrl}/rest/v1/ea_events?${params}`, {
+    headers: supabaseHeaders(key, "return=representation"),
+  });
+  if (!res.ok) throw new Error(`Lifecycle lookup failed: ${res.status}`);
+  const rows: unknown = await res.json();
+  return Array.isArray(rows) && rows.length > 0;
+}
+
 async function handleLifecycle(
   body: Payload,
   event: EventType,
@@ -514,6 +538,10 @@ async function handleLifecycle(
   requestId: string,
 ): Promise<void> {
   const lifecycleEvent = event === "ea_deinit" ? "ea_deinit" : "ea_init";
+  if (lifecycleEvent === "ea_init" && await lifecycleInitExists(body, supabaseUrl, key)) {
+    console.log(`[LIFECYCLE_DEDUP] ${JSON.stringify({requestId, symbol: body.symbol, boot_id: body.boot_id})}`);
+    return;
+  }
   const row = buildLifecycleRow(body, lifecycleEvent, requestId);
   await requireInsert(supabaseUrl, key, "ea_events", row, requestId);
 }
