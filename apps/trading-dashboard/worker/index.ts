@@ -116,42 +116,42 @@ const signalSelect = [
 async function openPositions(env: Env): Promise<Response> {
   return supabaseGet(
     env,
-    `trades?select=${tradeSelect}&close_time=is.null&exclude_from_edge=eq.false&order=open_time.desc&limit=50`,
+    `trades?select=${tradeSelect}&close_time=is.null&exclude_from_edge=eq.false&order=open_time.desc&limit=25`,
   )
 }
 
 async function cleanEdgeTrades(env: Env): Promise<Response> {
   return supabaseGet(
     env,
-    `trades?select=${tradeSelect}&exclude_from_edge=eq.false&order=created_at.desc&limit=50`,
+    `trades?select=${tradeSelect}&exclude_from_edge=eq.false&order=created_at.desc&limit=25`,
   )
 }
 
 async function excludedTrades(env: Env): Promise<Response> {
   return supabaseGet(
     env,
-    `trades?select=${tradeSelect}&exclude_from_edge=eq.true&order=created_at.desc&limit=50`,
+    `trades?select=${tradeSelect}&exclude_from_edge=eq.true&order=created_at.desc&limit=25`,
   )
 }
 
 async function latestTrades(env: Env): Promise<Response> {
   return supabaseGet(
     env,
-    `trades?select=${tradeSelect}&order=created_at.desc&limit=50`,
+    `trades?select=${tradeSelect}&order=created_at.desc&limit=25`,
   )
 }
 
 async function latestSignals(env: Env): Promise<Response> {
   return supabaseGet(
     env,
-    `signal_evals?select=${signalSelect}&order=created_at.desc&limit=50`,
+    `signal_evals?select=${signalSelect}&order=created_at.desc&limit=25`,
   )
 }
 
 async function liveValidationSignals(env: Env): Promise<Response> {
   return supabaseGet(
     env,
-    `signal_evals?select=${signalSelect}&created_at=gte.${encodeURIComponent(BUG_DATA_01_CUTOFF)}&order=created_at.desc&limit=100`,
+    `signal_evals?select=${signalSelect}&created_at=gte.${encodeURIComponent(BUG_DATA_01_CUTOFF)}&order=created_at.desc&limit=50`,
   )
 }
 
@@ -205,13 +205,13 @@ async function dataQuality(env: Env): Promise<Response> {
     fetch(
       `${env.SUPABASE_URL}/rest/v1/signal_evals?select=${signalSelect}&created_at=gte.${encodeURIComponent(
         BUG_DATA_01_CUTOFF,
-      )}&order=created_at.desc&limit=200`,
+      )}&order=created_at.desc&limit=50`,
       { headers: supabaseHeaders(key) },
     ),
     fetch(
       `${env.SUPABASE_URL}/rest/v1/trades?select=${tradeSelect}&created_at=gte.${encodeURIComponent(
         BUG_DATA_01_CUTOFF,
-      )}&order=created_at.desc&limit=200`,
+      )}&order=created_at.desc&limit=50`,
       { headers: supabaseHeaders(key) },
     ),
     fetch(
@@ -273,9 +273,9 @@ async function dataQuality(env: Env): Promise<Response> {
     },
     latest_signal: latestSignal,
     samples: {
-      live_incomplete_signal_evals: incompleteSignals.slice(0, 10),
-      live_incomplete_trade_opens: incompleteTradeOpens.slice(0, 10),
-      live_incomplete_trade_closes: incompleteTradeCloses.slice(0, 10),
+      live_incomplete_signal_evals: incompleteSignals.slice(0, 5),
+      live_incomplete_trade_opens: incompleteTradeOpens.slice(0, 5),
+      live_incomplete_trade_closes: incompleteTradeCloses.slice(0, 5),
     },
   })
 }
