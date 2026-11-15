@@ -80,3 +80,48 @@ test("lifecycle Supabase rejection returns HTTP 500", { concurrency: false }, as
   assert.equal(response.status, 500);
   assert.match(responseBody.error, /Supabase ea_events insert failed: 400/);
 });
+
+test("duplicate init boot ID is not persisted", { concurrency: false }, async (t) => {
+  const originalFetch = global.fetch;
+  t.after(() => { global.fetch = originalFetch; });
+  let posts = 0;
+  global.fetch = async (_url, init) => {
+    if (init?.method === "POST") posts++;
+    return new Response(JSON.stringify([{ id: "existing" }]), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+  const response = await lifecycleRequest({
+    event: "ea_init", symbol: "USDJPY", ea_version: "v5.2.0",
+    boot_id: "known-boot", analysis_events: Array(200).fill("chart"),
+  });
+  assert.equal(response.status, 200);
+  assert.equal(posts, 0);
+});
+
+test("new init persists a compact summary without chart history", { concurrency: false }, async (t) => {
+  const originalFetch = global.fetch;
+  t.after(() => { global.fetch = originalFetch; });
+  let row;
+  global.fetch = async (_url, init) => {
+    if (init?.method === "POST") {
+      row = JSON.parse(init.body);
+      return new Response(null, { status: 201 });
+    }
+    return new Response("[]", { status: 200 });
+  };
+  const response = await lifecycleRequest({
+    event: "ea_init", symbol: "USDJPY", ea_version: "v5.2.0",
+    boot_id: "new-boot", balance: 1000,
+    analysis_events: Array(200).fill("chart"),
+    trend_charts: Array(200).fill("series"),
+    positions: Array(200).fill("position"),
+  });
+  assert.equal(response.status, 200);
+  assert.equal(row.raw_payload.boot_id, "new-boot");
+  assert.equal(row.raw_payload.balance, 1000);
+  assert.equal(row.raw_payload.analysis_events, undefined);
+  assert.equal(row.raw_payload.trend_charts, undefined);
+  assert.ok(JSON.stringify(row.raw_payload).length < 3000);
+});
